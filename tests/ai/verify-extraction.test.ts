@@ -46,7 +46,7 @@ describe("valid extraction", () => {
     ),
   });
 
-  it("accepts well-supported values without flags", () => {
+  it("accepts well-supported values, but never pre-selects the outcome", () => {
     const result = verified(output, source);
     const [med] = result.medicines;
     expect(med.name).toMatchObject({
@@ -60,11 +60,27 @@ describe("valid extraction", () => {
       value: "2026-09-04",
       needsReview: false,
     });
+    // Outcome is an interpretation: always shown for confirmation, never pre-ticked.
     expect(result.outcome).toMatchObject({
       value: "recovering",
+      needsReview: true,
+    });
+    expect(result.outcome.flags.map((f) => f.code)).toEqual([
+      "confirm_outcome",
+    ]);
+    expect(result.medicalAttention).toMatchObject({
+      value: "clinic_or_doctor",
       needsReview: false,
     });
-    expect(result.medicalAttention.value).toBe("clinic_or_doctor");
+    for (const field of [
+      med.name,
+      med.dose,
+      med.route,
+      med.frequency,
+      med.startDate,
+    ]) {
+      expect(field.flags).toEqual([]);
+    }
     expect(result.symptoms.map((s) => s.value)).toEqual(["itchy red rash"]);
     expect(result.warnings).toEqual([]);
   });
@@ -355,14 +371,17 @@ describe("fabricated or unsupported values", () => {
       source,
     );
     expect(result.outcome.flags.map((f) => f.code)).toEqual([
+      "confirm_outcome",
+      "confirm_serious_event",
       "unsupported_severity",
     ]);
     expect(result.medicalAttention.flags.map((f) => f.code)).toEqual([
+      "confirm_serious_event",
       "unsupported_severity",
     ]);
   });
 
-  it("accepts hospital admission when the reporter states it", () => {
+  it("requires confirmation of hospital admission even when the reporter states it", () => {
     const result = verified(
       simulatedOutput({
         medical_attention: asEnumField(
@@ -371,7 +390,10 @@ describe("fabricated or unsupported values", () => {
       }),
       text("identifiers-removed"),
     );
-    expect(result.medicalAttention.needsReview).toBe(false);
+    expect(result.medicalAttention.needsReview).toBe(true);
+    expect(result.medicalAttention.flags.map((f) => f.code)).toEqual([
+      "confirm_serious_event",
+    ]);
   });
 
   it("downgrades a 'suspected' role without the reporter's own words", () => {

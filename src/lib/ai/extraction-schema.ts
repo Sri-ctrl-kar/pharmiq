@@ -82,7 +82,22 @@ export type ReviewFlagCode =
   | "not_specific_medicine"
   | "duplicate_medicine"
   | "unsupported_severity"
-  | "invalid_time";
+  | "invalid_time"
+  // Added after the M3 safety review:
+  | "date_mismatch"
+  | "date_not_verifiable"
+  | "time_mismatch"
+  | "time_not_verifiable"
+  | "time_meridiem_unclear"
+  | "approximate_time"
+  | "not_linked_to_medicine"
+  | "negated"
+  | "instruction_like_text"
+  | "confirm_serious_event"
+  | "confirm_outcome"
+  // Added in the verification review:
+  | "multiple_dates_in_quote"
+  | "imprecise_date";
 
 export type ReviewFlag = { code: ReviewFlagCode; message: string };
 

@@ -83,15 +83,19 @@ describe("scoreCase", () => {
   });
 
   it("counts a wrong value that would be pre-selected as a silent error", async () => {
+    // Route mapping is one of the remaining interpretations the verifier cannot check.
     const wrong = {
       ...faithful,
-      outcome: asEnumField(
-        reported("recovered", "The rash is getting better now"),
-      ),
+      medicines: [
+        {
+          ...faithful.medicines[0],
+          route: asEnumField(reported("topical", "capsules")),
+        },
+      ],
     };
     const score = scoreCase(testCase, await run(wrong));
     expect(score.silentErrors).toEqual([
-      'outcome: "recovered" would be pre-selected',
+      'medicines[0] amoxicillin.route: "topical" would be pre-selected',
     ]);
     expect(score.passed).toBe(score.total - 1);
   });

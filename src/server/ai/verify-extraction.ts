@@ -9,20 +9,42 @@ import {
 } from "@/lib/ai/extraction-schema";
 import { MAX_SUSPECTED_MEDICINES, MAX_SYMPTOMS } from "@/lib/reports/constants";
 import { isNotFutureDate, isRealCalendarDate } from "@/lib/reports/schema";
+import {
+  checkDateAgainstQuote,
+  checkTimeAgainstQuote,
+  compactText as compact,
+  isImprecise,
+  isInInstructionLikeText,
+  isLinkedToMedicine,
+  isNegated,
+  normaliseText as normalise,
+  statedDateMentions,
+  toIsoDate,
+} from "./evidence-checks";
 
 /**
  * Deterministic checks applied to every model response before anything reaches the
  * reporter. The model is never trusted:
  *
  * - The response must match the strict wire schema exactly (unknown keys reject it).
- * - Every quoted `evidence` must appear verbatim in the text the model was given.
- * - Values must appear in their quote (names, doses, frequencies, symptoms), be valid
- *   and not in the future (dates), and severe categories need explicit wording.
+ * - Every quoted `evidence` must appear verbatim in the text the model was given, and
+ *   must not come from text that reads like an instruction to the AI.
+ * - Names, doses, frequencies and symptoms must appear in their quote; negated
+ *   symptoms ("no fever") are flagged.
+ * - Dates must be real, not in the future, and the quote must state that exact day,
+ *   month and year. Times must match a clock time in the quote; approximate or
+ *   am/pm-unclear times are flagged.
+ * - Dose, route, frequency and start date must be linked to their own medicine (the
+ *   quote names it, or sits in a sentence that names it, and names no other medicine).
+ * - Death, hospital admission and emergency visits always need the reporter's own
+ *   confirmation, need explicit wording, and are flagged when negated.
+ * - Outcome is an interpretation of the reporter's words and always needs confirmation.
  * - Vague medicine names, duplicates and conflicting dates are flagged.
  * - Model notes that read like advice, diagnosis, causality or severity are replaced.
  *
  * Flagged or ambiguous values are returned with `needsReview: true`; the UI never
- * pre-selects them.
+ * pre-selects them. These are heuristics over English text: see docs/AI_EXTRACTION.md
+ * for what they cannot catch.
  */
 
 const MAX_NOTE_LENGTH = 200;
@@ -31,13 +53,22 @@ const SAFE_NOTE = "Check this against the description.";
 const UNSAFE_NOTE =
   /\b(stop|discontinu|switch|reduc|increas|avoid|continu|restart|chang)\w*\s+(taking|using|the|your|this|that|it|medic\w*|dose\w*|tablet\w*|drug\w*)\b|\bcaus(e|ed|es|ing|al|ality)\b|\bdiagnos|\ballerg(y|ic)\s+to\b|\byou should\b|\brecommend|\bside[- ]effects?\s+of\b|\breaction\s+(to|from)\b|\bsevere\b|\bserious\b|\blife[- ]threatening\b|\bdue to\b/i;
 
-const SEVERITY_EVIDENCE: Record<string, RegExp> = {
-  fatal: /\b(died|death|dead|passed away|expired|fatal)\b/i,
+/** Serious events: never pre-selected, need explicit wording, checked for negation. */
+const SERIOUS_EVENT_WORDS: Record<string, RegExp> = {
+  fatal: /\b(die|died|dies|dying|death|dead|passed away|expired|fatal)\b/i,
   hospitalised:
-    /\b(admit\w*|hospitali[sz]\w*|in\s?patient|ward|icu|intensive care)\b/i,
+    /\b(admit\w*|admission\w*|hospitali[sz]\w*|in\s?patient|ward|icu|intensive care)\b/i,
   emergency_department:
     /\b(emergency|casualty|a\s?&\s?e|er\b|accident and emergency)\b/i,
 };
+
+/** Non-serious categories whose wording can still be negated ("has not seen a doctor"). */
+const NEGATABLE_WORDS: Record<string, RegExp> = {
+  clinic_or_doctor: /\b(doctor|clinic|gp|physician|dr|consult\w*|opd)\b/i,
+};
+
+const escapeRegExp = (text: string) =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const GENERIC_MEDICINE_WORDS = new Set(
   (
@@ -49,25 +80,13 @@ const GENERIC_MEDICINE_WORDS = new Set(
   ).split(" "),
 );
 
-const normalise = (text: string) =>
-  text
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[‘’`]/g, "'")
-    .replace(/[“”]/g, '"')
-    .replace(/[–—]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const compact = (text: string) =>
-  normalise(text).replace(/[^\p{L}\p{N}]/gu, "");
-
 const clean = (text: string | null) => {
   const trimmed = text?.trim();
   return trimmed ? trimmed : null;
 };
 
-type FieldKind = "text" | "date" | "time" | "enum";
+type FieldKind =
+  "text" | "symptom" | "date" | "time" | "route" | "outcome" | "attention";
 type AnyWireField = Omit<WireField, "value"> & { value: string | null };
 
 export type VerifyResult =
@@ -147,11 +166,32 @@ export function verifyExtraction(
         "evidence_not_found",
         "The quoted text does not appear in the description.",
       );
+    } else if (isInInstructionLikeText(sourceText, evidence)) {
+      flag(
+        "instruction_like_text",
+        "This comes from text that reads like an instruction to the AI, not part of the report.",
+      );
     }
+
+    const checkSeriousEvent = (words: RegExp) => {
+      flag(
+        "confirm_serious_event",
+        "Serious event: confirm this yourself before adding it.",
+      );
+      if (evidence === null || !words.test(evidence)) {
+        flag(
+          "unsupported_severity",
+          "The description does not explicitly state this.",
+        );
+      } else if (isNegated(sourceText, evidence, words)) {
+        flag("negated", "Your text says this did not happen.");
+      }
+    };
 
     if (value !== null) {
       switch (kind) {
         case "text":
+        case "symptom":
           if (
             evidence !== null &&
             !compact(evidence).includes(compact(value))
@@ -161,49 +201,122 @@ export function verifyExtraction(
               "This value does not appear in the quoted text.",
             );
           }
+          if (
+            kind === "symptom" &&
+            evidence !== null &&
+            isNegated(
+              sourceText,
+              evidence,
+              new RegExp(escapeRegExp(normalise(value))),
+            )
+          ) {
+            flag("negated", "Your text says this did not happen.");
+          }
           break;
-        case "date":
+        case "date": {
           if (!isRealCalendarDate(value)) {
             flag("invalid_date", "Not a valid calendar date.");
-          } else {
-            if (!isNotFutureDate(value, now)) {
-              flag("future_date", "This date is in the future.");
-            }
-            if (evidence !== null && !evidence.includes(value.slice(0, 4))) {
+            break;
+          }
+          if (!isNotFutureDate(value, now)) {
+            flag("future_date", "This date is in the future.");
+          }
+          if (evidence === null) break;
+          const check = checkDateAgainstQuote(value, evidence);
+          if (check === "not_stated") {
+            flag(
+              "date_not_verifiable",
+              "The quoted text does not state this calendar date.",
+            );
+          } else if (check === "matches_without_year") {
+            flag(
+              "year_not_stated",
+              "The year is not stated in the quoted text.",
+            );
+          } else if (check === "mismatch") {
+            flag(
+              "date_mismatch",
+              "This date does not match the date in the quoted text.",
+            );
+          } else if (check === "multiple_dates") {
+            flag(
+              "multiple_dates_in_quote",
+              "The quoted text gives more than one date.",
+            );
+          }
+          if (isImprecise(evidence)) {
+            flag(
+              "imprecise_date",
+              "The text gives an approximate date, a range or a before/after date.",
+            );
+          }
+          const numeric = evidence.match(
+            /\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})\b/,
+          );
+          if (numeric) {
+            const [first, second] = [Number(numeric[1]), Number(numeric[2])];
+            if (first <= 12 && second <= 12 && first !== second) {
               flag(
-                "year_not_stated",
-                "The year is not stated in the quoted text.",
+                "day_month_unclear",
+                "Day and month order is unclear in this date.",
               );
             }
-            const numeric = evidence?.match(
-              /\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})\b/,
-            );
-            if (numeric) {
-              const [first, second] = [Number(numeric[1]), Number(numeric[2])];
-              if (first <= 12 && second <= 12 && first !== second) {
-                flag(
-                  "day_month_unclear",
-                  "Day and month order is unclear in this date.",
-                );
-              }
-            }
           }
           break;
-        case "time":
+        }
+        case "time": {
           if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
             flag("invalid_time", "Not a valid time (HH:MM).");
+            break;
           }
-          break;
-        case "enum": {
-          const required = SEVERITY_EVIDENCE[value];
-          if (required && !(evidence !== null && required.test(evidence))) {
+          if (evidence === null) break;
+          const check = checkTimeAgainstQuote(value, evidence);
+          if (check === "not_stated") {
             flag(
-              "unsupported_severity",
-              "The description does not explicitly state this.",
+              "time_not_verifiable",
+              "The quoted text does not state this clock time.",
+            );
+          } else if (check === "mismatch") {
+            flag(
+              "time_mismatch",
+              "This time does not match the time in the quoted text.",
+            );
+          } else if (check === "meridiem_unclear") {
+            flag(
+              "time_meridiem_unclear",
+              "The text does not say whether this is morning or evening.",
+            );
+          }
+          if (isImprecise(evidence)) {
+            flag(
+              "approximate_time",
+              "The text gives an approximate time, a range or a before/after time.",
             );
           }
           break;
         }
+        case "outcome":
+          flag(
+            "confirm_outcome",
+            "Outcome is an interpretation of your words: confirm it yourself.",
+          );
+          if (SERIOUS_EVENT_WORDS[value]) {
+            checkSeriousEvent(SERIOUS_EVENT_WORDS[value]);
+          }
+          break;
+        case "attention":
+          if (SERIOUS_EVENT_WORDS[value]) {
+            checkSeriousEvent(SERIOUS_EVENT_WORDS[value]);
+          } else if (
+            NEGATABLE_WORDS[value] &&
+            evidence !== null &&
+            isNegated(sourceText, evidence, NEGATABLE_WORDS[value])
+          ) {
+            flag("negated", "Your text says this did not happen.");
+          }
+          break;
+        case "route":
+          break;
       }
     }
 
@@ -237,7 +350,7 @@ export function verifyExtraction(
       return {
         name,
         dose: verifyField(medicine.dose, "text"),
-        route: verifyField(medicine.route, "enum"),
+        route: verifyField(medicine.route, "route"),
         frequency: verifyField(medicine.frequency, "text"),
         startDate: verifyField(medicine.start_date, "date"),
         reporterRole:
@@ -286,9 +399,35 @@ export function verifyExtraction(
     seenNames.add(key);
   }
 
+  // Each detail must belong to its own medicine, not another one in the text.
+  const allNames = medicines.map((medicine) => medicine.name.value!);
+  for (const medicine of medicines) {
+    const name = medicine.name.value!;
+    const others = allNames.filter((other) => compact(other) !== compact(name));
+    for (const detail of [
+      medicine.dose,
+      medicine.route,
+      medicine.frequency,
+      medicine.startDate,
+    ]) {
+      if (
+        detail.value !== null &&
+        detail.evidence !== null &&
+        !detail.flags.some((f) => f.code === "evidence_not_found") &&
+        !isLinkedToMedicine(sourceText, detail.evidence, name, others)
+      ) {
+        addFlag(
+          detail,
+          "not_linked_to_medicine",
+          "This detail is not clearly linked to this medicine in your text.",
+        );
+      }
+    }
+  }
+
   // Symptoms ----------------------------------------------------------------
   let symptoms = wire.symptoms
-    .map((symptom) => verifyField(symptom, "text"))
+    .map((symptom) => verifyField(symptom, "symptom"))
     .filter((symptom) => symptom.value !== null);
   if (symptoms.length > MAX_SYMPTOMS) {
     warnings.push(`Only the first ${MAX_SYMPTOMS} symptoms are shown.`);
@@ -298,8 +437,8 @@ export function verifyExtraction(
   // Reaction ----------------------------------------------------------------
   const onsetDate = verifyField(wire.reaction_onset_date, "date");
   const onsetTime = verifyField(wire.reaction_onset_time, "time");
-  const outcome = verifyField(wire.outcome, "enum");
-  const medicalAttention = verifyField(wire.medical_attention, "enum");
+  const outcome = verifyField(wire.outcome, "outcome");
+  const medicalAttention = verifyField(wire.medical_attention, "attention");
 
   if (
     onsetTime.value !== null &&
@@ -309,6 +448,24 @@ export function verifyExtraction(
       onsetTime,
       "time_without_date",
       "A time was found but the date is missing or unclear.",
+    );
+  }
+
+  // Omission check: dates the reporter wrote that no suggestion uses.
+  const usedDates = new Set(
+    [onsetDate, ...medicines.map((medicine) => medicine.startDate)]
+      .map((field) => field.value)
+      .filter((value): value is string => value !== null),
+  );
+  const unusedDates = statedDateMentions(sourceText).filter((readings) =>
+    readings.every((reading) => {
+      const iso = toIsoDate(reading);
+      return iso === null || !usedDates.has(iso);
+    }),
+  ).length;
+  if (unusedDates > 0) {
+    warnings.push(
+      `Your description mentions ${unusedDates === 1 ? "a date" : `${unusedDates} dates`} that no suggestion uses. Check the date fields yourself.`,
     );
   }
 
