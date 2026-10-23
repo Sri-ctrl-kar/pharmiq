@@ -11,7 +11,7 @@ import {
   type RpcClient,
 } from "@/server/reports/supabase-repository";
 import { reportSubmissionSchema, toReportContent } from "@/lib/reports/schema";
-import { validDraft } from "../fixtures";
+import { medicineDraft, validDraft } from "../fixtures";
 
 /**
  * Milestone 4 database layer: the real migrations on in-process Postgres (PGlite), with
@@ -142,7 +142,25 @@ beforeAll(async () => {
       return { data: rows[0].result, error: null };
     },
   };
-  const content = toReportContent(reportSubmissionSchema.parse(validDraft()));
+  const content = toReportContent(
+    reportSubmissionSchema.parse(
+      validDraft({
+        medicines: [
+          validDraft().medicines[0],
+          medicineDraft({
+            name: "Atorvastatin",
+            dose: "20 mg",
+            courseStatus: "dose_changed",
+            previousDose: "10 mg",
+            changeDate: "2026-08-15",
+            batchNumber: "SYN-ATV-01",
+            expiryDate: "2027-01",
+            detailsSource: "prescription",
+          }),
+        ],
+      }),
+    ),
+  );
   await new SupabaseReportRepository(submitClient).create({
     reportId: "ADR-2026-REVW01",
     idempotencyKey: crypto.randomUUID(),
@@ -152,6 +170,28 @@ beforeAll(async () => {
 }, 60_000);
 
 describe("reviewer reads (RLS)", () => {
+  it("maps each medicine's own details and the reporter's suspected marks", async () => {
+    const report = await new SupabaseReviewRepository(
+      clientAs("authenticated", REVIEWER),
+      reviewer,
+    ).getReport("ADR-2026-REVW01");
+    expect(report!.content.suspectedSelection).toBe("marked");
+    expect(report!.content.medicines).toEqual([
+      expect.objectContaining({ name: "Amoxicillin", suspected: true }),
+      expect.objectContaining({
+        name: "Atorvastatin",
+        suspected: false,
+        dose: "20 mg",
+        courseStatus: "dose_changed",
+        previousDose: "10 mg",
+        changeDate: "2026-08-15",
+        batchNumber: "SYN-ATV-01",
+        expiryDate: "2027-01",
+        detailsSource: "prescription",
+      }),
+    ]);
+  });
+
   it("gives reviewers every report, mapped with medicines and history", async () => {
     const reports = await new SupabaseReviewRepository(
       clientAs("authenticated", REVIEWER),
@@ -167,10 +207,18 @@ describe("reviewer reads (RLS)", () => {
     );
     const syn2 = reports.find((r) => r.reportId === "ADR-2026-SYN002")!;
     expect(syn2.isSynthetic).toBe(true);
-    expect(syn2.content.suspectedMedicines.map((m) => m.name)).toEqual([
+    expect(syn2.content.medicines.map((m) => m.name)).toEqual([
       "Metformin",
       "Atorvastatin",
     ]);
+    // Seed rows predate Milestone 6 semantics: every listed medicine was suspected.
+    expect(syn2.content.medicines.every((m) => m.suspected)).toBe(true);
+    expect(syn2.content.suspectedSelection).toBe("marked");
+    expect(syn2.content.medicines[1]).toMatchObject({
+      courseStatus: null,
+      endDate: null,
+      batchNumber: null,
+    });
     expect(syn2.content.reaction.symptoms).toEqual([
       "muscle aches",
       "tiredness",

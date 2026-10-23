@@ -73,13 +73,13 @@ const rpcClient: RpcClient = {
 };
 
 function record(overrides: Partial<NewReportRecord> = {}): NewReportRecord {
-  const medicine = validDraft().suspectedMedicines[0];
+  const medicine = validDraft().medicines[0];
   const content = toReportContent(
     reportSubmissionSchema.parse(
       validDraft({
-        suspectedMedicines: [
+        medicines: [
           medicine,
-          { ...medicine, name: "Cetirizine", dose: "" },
+          { ...medicine, name: "Cetirizine", dose: "", suspected: false },
         ],
       }),
     ),
@@ -88,7 +88,7 @@ function record(overrides: Partial<NewReportRecord> = {}): NewReportRecord {
     reportId: "ADR-2026-TEST01",
     idempotencyKey: crypto.randomUUID(),
     content,
-    missingFields: ["suspectedMedicines.1.dose"],
+    missingFields: ["medicines.1.dose"],
     ...overrides,
   };
 }
@@ -163,7 +163,7 @@ describe("submit_report via SupabaseReportRepository", () => {
       is_synthetic: false,
       patient_age_years: 34,
       onset_time: "09:15:00",
-      missing_fields: ["suspectedMedicines.1.dose"],
+      missing_fields: ["medicines.1.dose"],
       position: 1,
       name: "Amoxicillin",
     });
@@ -207,7 +207,7 @@ describe("submit_report via SupabaseReportRepository", () => {
   it("is atomic: an invalid medicine leaves no partial report behind", async () => {
     const before = await count("public.reports");
     const bad = toSubmitReportPayload(record({ reportId: "ADR-2026-TEST05" }));
-    bad.suspected_medicines[1].name = "x";
+    bad.medicines[1].name = "x";
     await expect(callRaw("service_role", bad)).rejects.toThrow(
       /check constraint/,
     );
@@ -219,7 +219,7 @@ describe("submit_report via SupabaseReportRepository", () => {
     const cases = [
       { ...base, reaction_onset_date: "2999-01-01" },
       { ...base, reporter_type: "pharma_company" },
-      { ...base, suspected_medicines: [] },
+      { ...base, medicines: [] },
       { ...base, idempotency_key: null },
       { ...base, public_id: "not-an-id" },
       { ...base, patient_age_years: 300 },

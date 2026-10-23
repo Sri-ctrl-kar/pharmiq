@@ -36,6 +36,29 @@ export const medicineRoutes = options({
   unknown: "Not known",
 });
 
+/** Where the medicine course stood when reporting. Blank means "not provided". */
+export const medicineCourseStatuses = options({
+  currently_taking: "Still taking it",
+  completed: "Finished the course",
+  stopped: "Stopped before finishing",
+  dose_changed: "Dose or frequency changed",
+});
+
+/** How the product details (brand, manufacturer, batch, expiry) were checked. */
+export const productDetailSources = options({
+  pack_or_label: "Checked the pack, strip or label",
+  prescription: "From the prescription",
+  pharmacy_record: "From a pharmacy bill or record",
+  memory: "From memory",
+  other: "Other",
+});
+
+/** The reporter's own choice: specific suspected medicine(s), or not sure which. */
+export const suspectedSelections = options({
+  marked: "I marked the medicine(s) I suspect",
+  not_sure: "Not sure which medicine",
+});
+
 export const reactionOutcomes = options({
   recovered: "Recovered",
   recovering: "Recovering",
@@ -100,12 +123,17 @@ export const indianStatesAndUts = [
   "West Bengal",
 ] as const;
 
-export const MAX_SUSPECTED_MEDICINES = 5;
+/** Medicine entries per report (suspected and not suspected together). */
+export const MAX_MEDICINES = 10;
 export const MAX_SYMPTOMS = 10;
 
 export type ReporterType = (typeof reporterTypes.values)[number];
 export type PatientSex = (typeof patientSexes.values)[number];
 export type MedicineRoute = (typeof medicineRoutes.values)[number];
+export type MedicineCourseStatus =
+  (typeof medicineCourseStatuses.values)[number];
+export type ProductDetailSource = (typeof productDetailSources.values)[number];
+export type SuspectedSelection = (typeof suspectedSelections.values)[number];
 export type ReactionOutcome = (typeof reactionOutcomes.values)[number];
 export type MedicalAttention = (typeof medicalAttentionOptions.values)[number];
 export type ReportStatus = (typeof reportStatuses.values)[number];

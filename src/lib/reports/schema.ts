@@ -1,13 +1,16 @@
 import { z } from "zod";
 import {
-  MAX_SUSPECTED_MEDICINES,
+  MAX_MEDICINES,
   MAX_SYMPTOMS,
   indianStatesAndUts,
   medicalAttentionOptions,
+  medicineCourseStatuses,
   medicineRoutes,
   patientSexes,
+  productDetailSources,
   reactionOutcomes,
   reporterTypes,
+  suspectedSelections,
 } from "./constants";
 
 /**
@@ -85,17 +88,99 @@ const optionalAge = z.preprocess(
     .nullable(),
 );
 
-export const suspectedMedicineSchema = z.object({
-  name: z
-    .string({ error: "Enter the medicine name." })
+/** Expiry as printed on packs: month and year, stored as YYYY-MM. */
+const optionalExpiryMonth = z.preprocess(
+  blankToNull,
+  z
+    .string()
     .trim()
-    .min(2, "Enter the medicine name (brand or generic).")
-    .max(200, "Keep the medicine name under 200 characters."),
-  dose: optionalText(100),
-  route: optionalEnum(medicineRoutes.values),
-  frequency: optionalText(100),
-  startDate: optionalPastDate,
-});
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Enter the month and year, e.g. 2027-03.")
+    .refine(
+      (value) => value >= "1990-01" && value <= "2100-12",
+      "Enter a year between 1990 and 2100.",
+    )
+    .nullable(),
+);
+
+const optionalBatchNumber = z.preprocess(
+  blankToNull,
+  z
+    .string()
+    .trim()
+    .max(40, "Keep the batch number under 40 characters.")
+    .regex(
+      /^[A-Za-z0-9][A-Za-z0-9 ./_-]*$/,
+      "Use the letters, numbers and - / . characters printed on the pack.",
+    )
+    .nullable(),
+);
+
+/**
+ * One medicine entry. Every entry is validated on its own; only `name` is required.
+ * Blank optional fields are stored as null ("not provided"), never guessed.
+ */
+export const medicineEntrySchema = z
+  .object({
+    name: z
+      .string({ error: "Enter the medicine name." })
+      .trim()
+      .min(2, "Enter the medicine name (brand or generic).")
+      .max(200, "Keep the medicine name under 200 characters."),
+    brand: optionalText(200),
+    strength: optionalText(100),
+    dose: optionalText(100),
+    frequency: optionalText(100),
+    route: optionalEnum(medicineRoutes.values),
+    startDate: optionalPastDate,
+    endDate: optionalPastDate,
+    courseStatus: optionalEnum(medicineCourseStatuses.values),
+    previousDose: optionalText(100),
+    previousFrequency: optionalText(100),
+    /** Approximate date the dose or frequency changed. */
+    changeDate: optionalPastDate,
+    manufacturer: optionalText(200),
+    batchNumber: optionalBatchNumber,
+    expiryDate: optionalExpiryMonth,
+    detailsSource: optionalEnum(productDetailSources.values),
+    /** Marked by the reporter. Never set automatically. */
+    suspected: z.boolean().default(false),
+  })
+  .superRefine((medicine, ctx) => {
+    const issue = (path: string, message: string) =>
+      ctx.addIssue({ code: "custom", path: [path], message });
+    if (
+      medicine.startDate &&
+      medicine.endDate &&
+      medicine.endDate < medicine.startDate
+    ) {
+      issue("endDate", "The end date is before the start date.");
+    }
+    if (medicine.endDate && medicine.courseStatus === "currently_taking") {
+      issue(
+        "endDate",
+        "Remove the end date, or change the status if the medicine was stopped or finished.",
+      );
+    }
+    if (medicine.courseStatus === "dose_changed" && medicine.changeDate) {
+      if (medicine.startDate && medicine.changeDate < medicine.startDate) {
+        issue("changeDate", "The change date is before the start date.");
+      }
+      if (medicine.endDate && medicine.changeDate > medicine.endDate) {
+        issue("changeDate", "The change date is after the end date.");
+      }
+    }
+  })
+  .transform((medicine) =>
+    medicine.courseStatus === "dose_changed"
+      ? medicine
+      : {
+          ...medicine,
+          // Hidden unless the dose or frequency changed; never stored otherwise.
+          previousDose: null,
+          previousFrequency: null,
+          changeDate: null,
+        },
+  );
 
 export const reportSubmissionSchema = z
   .object({
@@ -120,13 +205,14 @@ export const reportSubmissionSchema = z
       sex: optionalEnum(patientSexes.values),
       state: optionalEnum(indianStatesAndUts),
     }),
-    suspectedMedicines: z
-      .array(suspectedMedicineSchema)
-      .min(1, "Add at least one suspected medicine.")
-      .max(
-        MAX_SUSPECTED_MEDICINES,
-        `Add up to ${MAX_SUSPECTED_MEDICINES} suspected medicines.`,
-      ),
+    medicines: z
+      .array(medicineEntrySchema)
+      .min(1, "Add at least one medicine.")
+      .max(MAX_MEDICINES, `Add up to ${MAX_MEDICINES} medicines.`),
+    /** "marked": the reporter ticked the suspected medicine(s); "not_sure": none ticked. */
+    suspectedSelection: z.enum(suspectedSelections.values, {
+      error: "Mark the medicine(s) you suspect, or choose “Not sure”.",
+    }),
     reaction: z.object({
       description: z
         .string({ error: "Describe the reaction." })
@@ -173,21 +259,44 @@ export const reportSubmissionSchema = z
       });
     }
     const seen = new Set<string>();
-    report.suspectedMedicines.forEach((medicine, index) => {
+    report.medicines.forEach((medicine, index) => {
       const key = medicine.name.toLowerCase().replace(/\s+/g, " ");
       if (seen.has(key)) {
         ctx.addIssue({
           code: "custom",
-          path: ["suspectedMedicines", index, "name"],
-          message: "This medicine is already listed.",
+          path: ["medicines", index, "name"],
+          message:
+            "This medicine is already listed. Use one entry and record any dose change in its status.",
         });
       }
       seen.add(key);
     });
-  });
+    if (
+      report.suspectedSelection === "marked" &&
+      !report.medicines.some((medicine) => medicine.suspected)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["suspectedSelection"],
+        message:
+          "Mark at least one medicine as suspected, or choose “Not sure”.",
+      });
+    }
+  })
+  .transform((report) =>
+    report.suspectedSelection === "not_sure"
+      ? {
+          ...report,
+          medicines: report.medicines.map((medicine) => ({
+            ...medicine,
+            suspected: false,
+          })),
+        }
+      : report,
+  );
 
 export type ReportSubmission = z.output<typeof reportSubmissionSchema>;
-export type SuspectedMedicine = z.output<typeof suspectedMedicineSchema>;
+export type MedicineEntry = z.output<typeof medicineEntrySchema>;
 /** The clinical content persisted for a report (no transport-only fields). */
 export type ReportContent = Omit<
   ReportSubmission,
@@ -204,12 +313,17 @@ export function toReportContent({
 }
 
 /** Form state: every input is held as a string until validation. */
-export type MedicineDraft = Record<keyof SuspectedMedicine, string>;
+export type MedicineTextField = Exclude<keyof MedicineEntry, "suspected">;
+export type MedicineDraft = Record<MedicineTextField, string> & {
+  suspected: boolean;
+};
 export type ReportDraft = {
   idempotencyKey: string;
   reporterType: string;
   patient: Record<keyof ReportSubmission["patient"], string>;
-  suspectedMedicines: MedicineDraft[];
+  medicines: MedicineDraft[];
+  /** "", "marked" or "not_sure". */
+  suspectedSelection: string;
   reaction: Record<
     Exclude<keyof ReportSubmission["reaction"], "symptoms">,
     string
@@ -222,17 +336,30 @@ export type ReportDraft = {
 
 export const emptyMedicineDraft = (): MedicineDraft => ({
   name: "",
+  brand: "",
+  strength: "",
   dose: "",
-  route: "",
   frequency: "",
+  route: "",
   startDate: "",
+  endDate: "",
+  courseStatus: "",
+  previousDose: "",
+  previousFrequency: "",
+  changeDate: "",
+  manufacturer: "",
+  batchNumber: "",
+  expiryDate: "",
+  detailsSource: "",
+  suspected: false,
 });
 
 export const emptyReportDraft = (idempotencyKey: string): ReportDraft => ({
   idempotencyKey,
   reporterType: "",
   patient: { initials: "", ageYears: "", sex: "", state: "" },
-  suspectedMedicines: [emptyMedicineDraft()],
+  medicines: [emptyMedicineDraft()],
+  suspectedSelection: "",
   reaction: {
     description: "",
     onsetDate: "",
@@ -249,7 +376,7 @@ export const emptyReportDraft = (idempotencyKey: string): ReportDraft => ({
 
 export type FieldErrors = Record<string, string>;
 
-/** Flatten issues to `{ "suspectedMedicines.0.name": "message" }`, first message per field. */
+/** Flatten issues to `{ "medicines.0.name": "message" }`, first message per field. */
 export function toFieldErrors(
   issues: readonly z.core.$ZodIssue[],
 ): FieldErrors {
@@ -265,7 +392,7 @@ export function toFieldErrors(
 export const stepFieldPrefixes = {
   reporter: ["reporterType", "patient."],
   describe: ["reaction.description"],
-  medicines: ["suspectedMedicines"],
+  medicines: ["medicines", "suspectedSelection"],
   reaction: [
     "reaction.onset",
     "reaction.symptoms",

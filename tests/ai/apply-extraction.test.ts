@@ -8,8 +8,10 @@ import {
 import type {
   VerifiedExtraction,
   VerifiedField,
+  VerifiedMedicine,
 } from "@/lib/ai/extraction-schema";
-import { emptyReportDraft } from "@/lib/reports/schema";
+import { emptyReportDraft, reportSubmissionSchema } from "@/lib/reports/schema";
+import { medicineDraft } from "../fixtures";
 
 const field = (overrides: Partial<VerifiedField> = {}): VerifiedField => ({
   status: "missing",
@@ -49,15 +51,31 @@ function extraction(
 const medicine = (
   name: VerifiedField,
   role: "suspected" | "other" | "unclear" = "suspected",
-) => ({
+  overrides: Partial<VerifiedMedicine> = {},
+): VerifiedMedicine => ({
   name,
   dose: ok("500 mg"),
   route: ok("oral"),
   frequency: field(),
   startDate: ok("2026-09-02"),
+  endDate: field(),
+  courseStatus: field(),
+  previousDose: field(),
+  previousFrequency: field(),
+  changeDate: field(),
   reporterRole: role,
-  reporterRoleEvidence: null,
+  reporterRoleEvidence: role === "suspected" ? "we think it was this" : null,
+  ...overrides,
 });
+
+/** The reporter's own choice for each medicine, in order. */
+const choose = (
+  decisions: ExtractionDecisions,
+  ...roles: ExtractionDecisions["medicines"][number]["role"][]
+) => {
+  roles.forEach((role, index) => (decisions.medicines[index].role = role));
+  return decisions;
+};
 
 const KEY = "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b";
 
@@ -81,7 +99,7 @@ describe("initialDecisions", () => {
     expect(decisions.symptoms.map((s) => s.accept)).toEqual([true, false]);
   });
 
-  it("requires a decision for medicines with an unclear role or a name needing review", () => {
+  it("never pre-selects whether a medicine is suspected, even when the reporter's words suggest it", () => {
     const decisions = initialDecisions(
       extraction({
         medicines: [
@@ -93,38 +111,74 @@ describe("initialDecisions", () => {
       }),
     );
     expect(decisions.medicines.map((m) => m.role)).toEqual([
-      "suspected",
-      "other",
+      "undecided",
+      "undecided",
       "undecided",
       "undecided",
     ]);
-    expect(undecidedMedicines(decisions)).toEqual(["cetirizine", "BP tablet"]);
+    expect(undecidedMedicines(decisions)).toEqual([
+      "amoxicillin",
+      "metformin",
+      "cetirizine",
+      "BP tablet",
+    ]);
+  });
+
+  it("never pre-selects course-change details", () => {
+    const flagged = (value: string) =>
+      field({
+        status: "reported",
+        value,
+        evidence: value,
+        needsReview: true,
+        flags: [{ code: "confirm_course_change", message: "x" }],
+      });
+    const [decision] = initialDecisions(
+      extraction({
+        medicines: [
+          medicine(ok("atorvastatin"), "unclear", {
+            courseStatus: flagged("dose_changed"),
+            previousDose: flagged("10 mg"),
+            changeDate: flagged("2026-10-01"),
+            endDate: ok("2026-10-10"),
+          }),
+        ],
+      }),
+    ).medicines;
+    expect(decision.courseStatus.accept).toBe(false);
+    expect(decision.previousDose.accept).toBe(false);
+    expect(decision.changeDate.accept).toBe(false);
+    expect(decision.endDate).toEqual({ accept: true, value: "2026-10-10" });
   });
 });
 
 describe("applyExtraction", () => {
   const base = () => emptyReportDraft(KEY);
 
-  it("fills an empty form from accepted suggestions and marks it AI-assisted", () => {
-    const decisions = initialDecisions(
-      extraction({
-        medicines: [medicine(ok("amoxicillin"))],
-        symptoms: [ok("itchy rash")],
-        onsetDate: ok("2026-09-04"),
-        outcome: ok("recovering"),
-        medicalAttention: ok("clinic_or_doctor"),
-      }),
+  it("fills an empty form from accepted suggestions and the reporter's choices", () => {
+    const decisions = choose(
+      initialDecisions(
+        extraction({
+          medicines: [medicine(ok("amoxicillin"))],
+          symptoms: [ok("itchy rash")],
+          onsetDate: ok("2026-09-04"),
+          outcome: ok("recovering"),
+          medicalAttention: ok("clinic_or_doctor"),
+        }),
+      ),
+      "suspected",
     );
     const { draft, applied, kept } = applyExtraction(base(), decisions);
-    expect(draft.suspectedMedicines).toEqual([
-      {
+    expect(draft.medicines).toEqual([
+      medicineDraft({
         name: "amoxicillin",
         dose: "500 mg",
         route: "oral",
-        frequency: "",
         startDate: "2026-09-02",
-      },
+        suspected: true,
+      }),
     ]);
+    expect(draft.suspectedSelection).toBe("marked");
     expect(draft.reaction).toMatchObject({
       onsetDate: "2026-09-04",
       outcome: "recovering",
@@ -136,33 +190,122 @@ describe("applyExtraction", () => {
     expect(applied).toContain("Suspected medicine: amoxicillin");
   });
 
-  it("never overwrites what the reporter already entered", () => {
+  it("adds each medicine as its own entry, keeping details with the right medicine", () => {
+    const decisions = choose(
+      initialDecisions(
+        extraction({
+          medicines: [
+            medicine(ok("amoxicillin"), "suspected", { dose: ok("500 mg") }),
+            medicine(ok("paracetamol"), "other", {
+              dose: ok("650 mg"),
+              startDate: field(),
+            }),
+          ],
+        }),
+      ),
+      "suspected",
+      "other",
+    );
+    const { draft } = applyExtraction(base(), decisions);
+    expect(draft.medicines.map((m) => [m.name, m.dose, m.suspected])).toEqual([
+      ["amoxicillin", "500 mg", true],
+      ["paracetamol", "650 mg", false],
+    ]);
+    // Not-suspected medicines become entries, not free text.
+    expect(draft.otherMedicines).toBe("");
+    expect(
+      reportSubmissionSchema.safeParse({ ...draft, declaration: true }),
+    ).toMatchObject({ success: false }); // still needs the reporter's other answers
+  });
+
+  it("never overwrites what the reporter already entered, including their suspected mark", () => {
     const draft = base();
-    draft.suspectedMedicines[0] = {
+    draft.medicines[0] = medicineDraft({
       name: "Amoxicillin",
       dose: "250 mg",
-      route: "",
-      frequency: "",
-      startDate: "",
-    };
+      suspected: false,
+    });
     draft.reaction.outcome = "recovered";
     const result = applyExtraction(
       draft,
-      initialDecisions(
-        extraction({
-          medicines: [medicine(ok("amoxicillin"))],
-          outcome: ok("recovering"),
-        }),
+      choose(
+        initialDecisions(
+          extraction({
+            medicines: [medicine(ok("amoxicillin"))],
+            outcome: ok("recovering"),
+          }),
+        ),
+        "suspected",
       ),
     );
-    expect(result.draft.suspectedMedicines).toHaveLength(1);
-    expect(result.draft.suspectedMedicines[0]).toMatchObject({
+    expect(result.draft.medicines).toHaveLength(1);
+    expect(result.draft.medicines[0]).toMatchObject({
       name: "Amoxicillin",
       dose: "250 mg",
       route: "oral",
+      suspected: false,
     });
+    expect(result.draft.suspectedSelection).toBe("");
     expect(result.draft.reaction.outcome).toBe("recovered");
-    expect(result.kept).toEqual(["amoxicillin: dose", "Outcome"]);
+    expect(result.kept).toEqual([
+      "amoxicillin: not marked as suspected, as you set it",
+      "amoxicillin: dose",
+      "Outcome",
+    ]);
+  });
+
+  it("does not mark a medicine suspected when the reporter chose “Not sure”", () => {
+    const draft = { ...base(), suspectedSelection: "not_sure" };
+    const result = applyExtraction(
+      draft,
+      choose(
+        initialDecisions(
+          extraction({ medicines: [medicine(ok("ibuprofen"))] }),
+        ),
+        "suspected",
+      ),
+    );
+    expect(result.draft.medicines[0]).toMatchObject({
+      name: "ibuprofen",
+      suspected: false,
+    });
+    expect(result.draft.suspectedSelection).toBe("not_sure");
+    expect(result.kept[0]).toMatch(/Not sure/);
+  });
+
+  it("applies course-change details only to an entry marked as a dose change", () => {
+    const withChange = (status: string) =>
+      medicine(ok("atorvastatin"), "unclear", {
+        dose: ok("20 mg"),
+        courseStatus: ok(status),
+        previousDose: ok("10 mg"),
+        changeDate: ok("2026-10-01"),
+      });
+    const accepted = (status: string) => {
+      const decisions = choose(
+        initialDecisions(extraction({ medicines: [withChange(status)] })),
+        "suspected",
+      );
+      for (const key of ["courseStatus", "previousDose", "changeDate"] as const)
+        decisions.medicines[0][key].accept = true;
+      return applyExtraction(base(), decisions);
+    };
+
+    const changed = accepted("dose_changed");
+    expect(changed.draft.medicines[0]).toMatchObject({
+      dose: "20 mg",
+      courseStatus: "dose_changed",
+      previousDose: "10 mg",
+      changeDate: "2026-10-01",
+    });
+
+    const stopped = accepted("stopped");
+    expect(stopped.draft.medicines[0]).toMatchObject({
+      courseStatus: "stopped",
+      previousDose: "",
+      changeDate: "",
+    });
+    expect(stopped.skipped).toHaveLength(2);
   });
 
   it("applies edited values and ignores rejected ones", () => {
@@ -176,44 +319,43 @@ describe("applyExtraction", () => {
     expect(draft.reaction.outcome).toBe("");
   });
 
-  it("adds 'other' medicines to the other-medicines text, and skips undecided ones", () => {
-    const decisions: ExtractionDecisions = initialDecisions(
-      extraction({
-        medicines: [
-          medicine(ok("metformin"), "other"),
-          medicine(ok("cetirizine"), "unclear"),
-        ],
-      }),
+  it("skips medicines left undecided or marked “don't add”", () => {
+    const decisions = choose(
+      initialDecisions(
+        extraction({
+          medicines: [medicine(ok("metformin")), medicine(ok("cetirizine"))],
+        }),
+      ),
+      "undecided",
+      "skip",
     );
     const { draft, applied } = applyExtraction(base(), decisions);
-    expect(draft.otherMedicines).toBe("metformin 500 mg, started 2026-09-02");
-    expect(draft.suspectedMedicines[0].name).toBe("");
-    expect(applied).toEqual(["Other medicine: metformin"]);
+    expect(draft.medicines).toEqual([medicineDraft()]);
+    expect(applied).toEqual([]);
   });
 
-  it("respects the suspected-medicine and symptom limits", () => {
+  it("respects the medicine and symptom limits", () => {
     const draft = base();
-    draft.suspectedMedicines = ["a1", "b2", "c3", "d4", "e5"].map((name) => ({
-      name,
-      dose: "",
-      route: "",
-      frequency: "",
-      startDate: "",
-    }));
+    draft.medicines = Array.from({ length: 10 }, (_, i) =>
+      medicineDraft({ name: `Synthetic ${i}` }),
+    );
     draft.reaction.symptoms = Array.from(
       { length: 10 },
       (_, i) => `symptom ${i}`,
     );
     const result = applyExtraction(
       draft,
-      initialDecisions(
-        extraction({
-          medicines: [medicine(ok("amoxicillin"))],
-          symptoms: [ok("rash")],
-        }),
+      choose(
+        initialDecisions(
+          extraction({
+            medicines: [medicine(ok("amoxicillin"))],
+            symptoms: [ok("rash")],
+          }),
+        ),
+        "suspected",
       ),
     );
-    expect(result.draft.suspectedMedicines).toHaveLength(5);
+    expect(result.draft.medicines).toHaveLength(10);
     expect(result.skipped).toHaveLength(2);
   });
 

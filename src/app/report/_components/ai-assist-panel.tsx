@@ -22,6 +22,7 @@ import type {
 } from "@/lib/ai/extraction-schema";
 import {
   medicalAttentionOptions,
+  medicineCourseStatuses,
   medicineRoutes,
   reactionOutcomes,
 } from "@/lib/reports/constants";
@@ -371,6 +372,11 @@ function SuggestionsReview({
       m.route,
       m.frequency,
       m.startDate,
+      m.endDate,
+      m.courseStatus,
+      m.previousDose,
+      m.previousFrequency,
+      m.changeDate,
     ]),
     ...extraction.symptoms,
     extraction.onsetDate,
@@ -443,7 +449,8 @@ function SuggestionsReview({
                   <Provenance field={medicine.name} />
                   {medicine.reporterRoleEvidence ? (
                     <p className="text-xs text-muted">
-                      You wrote: “{medicine.reporterRoleEvidence}”
+                      You wrote: “{medicine.reporterRoleEvidence}”. Only you
+                      decide whether you suspect this medicine.
                     </p>
                   ) : null}
                 </div>
@@ -495,6 +502,71 @@ function SuggestionsReview({
                       update((d) => void (d.medicines[index].startDate = value))
                     }
                   />
+                  <SuggestionRow
+                    id={`ai-med-${index}-end`}
+                    label="Date stopped or finished"
+                    field={medicine.endDate}
+                    decision={decision.endDate}
+                    type="date"
+                    onChange={(value) =>
+                      update((d) => void (d.medicines[index].endDate = value))
+                    }
+                  />
+                  <SuggestionRow
+                    id={`ai-med-${index}-status`}
+                    label="Status"
+                    field={medicine.courseStatus}
+                    decision={decision.courseStatus}
+                    options={medicineCourseStatuses.labels}
+                    onChange={(value) =>
+                      update(
+                        (d) => void (d.medicines[index].courseStatus = value),
+                      )
+                    }
+                  />
+                  {medicine.previousDose.status !== "missing" ||
+                  medicine.previousFrequency.status !== "missing" ||
+                  medicine.changeDate.status !== "missing" ? (
+                    <>
+                      <SuggestionRow
+                        id={`ai-med-${index}-previous-dose`}
+                        label="Dose before the change"
+                        field={medicine.previousDose}
+                        decision={decision.previousDose}
+                        onChange={(value) =>
+                          update(
+                            (d) =>
+                              void (d.medicines[index].previousDose = value),
+                          )
+                        }
+                      />
+                      <SuggestionRow
+                        id={`ai-med-${index}-previous-frequency`}
+                        label="How often, before the change"
+                        field={medicine.previousFrequency}
+                        decision={decision.previousFrequency}
+                        onChange={(value) =>
+                          update(
+                            (d) =>
+                              void (d.medicines[index].previousFrequency =
+                                value),
+                          )
+                        }
+                      />
+                      <SuggestionRow
+                        id={`ai-med-${index}-change-date`}
+                        label="Date of the change"
+                        field={medicine.changeDate}
+                        decision={decision.changeDate}
+                        type="date"
+                        onChange={(value) =>
+                          update(
+                            (d) => void (d.medicines[index].changeDate = value),
+                          )
+                        }
+                      />
+                    </>
+                  ) : null}
                 </div>
               ) : null}
             </fieldset>
@@ -720,8 +792,8 @@ function RoleChoice({
   onChange: (role: MedicineRoleChoice) => void;
 }) {
   const choices: { value: MedicineRoleChoice; label: string }[] = [
-    { value: "suspected", label: "Suspected medicine" },
-    { value: "other", label: "Other medicine" },
+    { value: "suspected", label: "Add as suspected" },
+    { value: "other", label: "Add, not suspected" },
     { value: "skip", label: "Don't add" },
   ];
   return (

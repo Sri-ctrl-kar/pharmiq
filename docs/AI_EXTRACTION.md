@@ -6,11 +6,15 @@ identically when AI is unavailable or not configured.
 
 ## What it may and may not do
 
-| May                                                                                                                                                                 | May not                                                                    |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Suggest medicine names (as written), dose, route, frequency, start date, symptoms, reaction onset, outcome and medical attention **when stated in the description** | Diagnose, name a condition, or say whether a medicine caused the reaction  |
-| Mark a field _ambiguous_ and say what to check                                                                                                                      | Calculate dates ("3 days ago"), correct spellings, convert brand ↔ generic |
-| Record that the **reporter** linked a medicine to the reaction (with their quote)                                                                                   | Assign or upgrade severity, or give any advice about medicines             |
+| May                                                                                                                                                                                                                                  | May not                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Suggest medicine names (as written), dose, route, frequency, start and end dates, course status, previous dose/frequency and change date, symptoms, reaction onset, outcome and medical attention **when stated in the description** | Diagnose, name a condition, or say whether a medicine caused the reaction  |
+| Mark a field _ambiguous_ and say what to check                                                                                                                                                                                       | Calculate dates ("3 days ago"), correct spellings, convert brand ↔ generic |
+| Record that the **reporter** linked a medicine to the reaction (with their quote)                                                                                                                                                    | Assign or upgrade severity, or give any advice about medicines             |
+
+Brand, strength, manufacturer, batch/lot number, expiry and how product details were
+checked are **not** extracted: they should be copied from the pack, and a batch number
+in free text is easily confused with other identifiers. Reporters enter them manually.
 
 These rules are enforced in three layers, not by the prompt alone:
 
@@ -41,8 +45,8 @@ These rules are enforced in three layers, not by the prompt alone:
      "noon"). A different time, a time with no am/pm ("9:30"), approximate or bounded
      wording ("around", "after 9 pm", "by 9 pm", "9 or 10 pm") or a quote without a
      clock time is flagged. A time without a usable date is flagged.
-   - **Medicine details.** Dose, route, frequency and start date must be linked to their
-     own medicine: the quote names that medicine, or sits in a sentence that names that
+   - **Medicine details.** Dose, route, frequency, start and end dates, course status,
+     previous dose/frequency and change date must each be linked to their own medicine: the quote names that medicine, or sits in a sentence that names that
      medicine and no other extracted medicine. A quote naming a different medicine is
      never linked, and a longer name ("amoxicillin-clavulanate") does not count as naming
      a shorter one ("amoxicillin").
@@ -53,16 +57,26 @@ These rules are enforced in three layers, not by the prompt alone:
      similar ("He was not admitted").
    - **Outcome** is an interpretation of the reporter's words ("getting better" →
      recovering?) and is **never pre-selected**. "Saw a doctor" is flagged when negated.
+   - **Medicine timelines (Milestone 6).** Course status, previous dose, previous
+     frequency and change date **always need review** (`confirm_course_change`): which
+     value came first, and which medicine changed, are easy to misread. An end date
+     before the start date, or a change date outside the course, is flagged. End and
+     change dates count for the omission check.
    - **Names.** Vague names ("BP tablet", "antibiotic", "flu vaccine"), duplicates and
-     nameless medicines are flagged or dropped; lists are capped.
+     nameless medicines are flagged or dropped; lists are capped at 10, the form's limit.
    - **Roles and notes.** A "suspected" role without the reporter's own words becomes
      "unclear"; model notes that read like advice, diagnosis, causality or severity are
      replaced with a neutral note.
 3. **Human confirmation in the UI** (`src/app/report/_components/ai-assist-panel.tsx`,
    `src/lib/ai/apply-extraction.ts`): every flagged or ambiguous item, every outcome and
    every serious event is shown with its reason and is **never pre-ticked**; each
-   medicine needs an explicit choice (suspected / other / don't add); applying never
-   overwrites what the reporter typed; applied values remain editable in the normal
+   medicine needs an explicit choice ("add as suspected", "add, not suspected", "don't
+   add") that is **never pre-selected** — even when the reporter's own words suggest
+   suspicion, the AI's reading is only shown as a hint; each medicine becomes its own
+   entry with its own details; a medicine already in the form keeps the reporter's
+   suspected mark, and nothing is marked suspected when they chose "Not sure";
+   course-change details are only applied to an entry whose status is "dose or frequency
+   changed"; applying never overwrites what the reporter typed; applied values remain editable in the normal
    steps; Undo is available; the original description is stored unchanged. Reports
    record `aiAssisted: true`; AI output itself is not stored.
 

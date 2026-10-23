@@ -9,11 +9,14 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   medicalAttentionOptions,
+  medicineCourseStatuses,
   medicineRoutes,
   patientSexes,
+  productDetailSources,
   reactionOutcomes,
   reporterTypes,
 } from "@/lib/reports/constants";
+import { suspectedMedicinesOf } from "@/lib/reports/medicines";
 import { isValidReportId } from "@/lib/reports/report-id";
 import { hasReportedSeriousEvent } from "@/lib/review/query";
 import { allowedNextStatuses } from "@/lib/review/status";
@@ -196,69 +199,92 @@ async function ReportDetail({
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                Suspected medicines (named by the reporter)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="overflow-x-auto">
-              <table className="w-full min-w-[32rem] text-left text-sm">
-                <caption className="sr-only">Suspected medicines</caption>
-                <thead>
-                  <tr className="border-b border-border text-xs text-muted">
-                    <th scope="col" className="py-2 pr-3 font-medium">
-                      Medicine
-                    </th>
-                    <th scope="col" className="py-2 pr-3 font-medium">
-                      Dose
-                    </th>
-                    <th scope="col" className="py-2 pr-3 font-medium">
-                      How often
-                    </th>
-                    <th scope="col" className="py-2 pr-3 font-medium">
-                      How taken
-                    </th>
-                    <th scope="col" className="py-2 font-medium">
-                      Started
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {content.suspectedMedicines.map((medicine, index) => (
-                    <tr
-                      key={index}
-                      className="border-b border-border/60 align-top"
-                    >
-                      <th scope="row" className="py-2 pr-3 font-medium">
-                        {medicine.name}
-                      </th>
-                      <td className="py-2 pr-3">
-                        {value(medicine.dose) ?? <NotProvided />}
-                      </td>
-                      <td className="py-2 pr-3">
-                        {value(medicine.frequency) ?? <NotProvided />}
-                      </td>
-                      <td className="py-2 pr-3">
-                        {medicine.route ? (
-                          medicineRoutes.labels[medicine.route]
-                        ) : (
-                          <NotProvided />
-                        )}
-                      </td>
-                      <td className="py-2">
-                        {medicine.startDate ? (
-                          formatDate(medicine.startDate)
-                        ) : (
-                          <NotProvided />
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
+          <section
+            aria-labelledby="medicines-heading"
+            className="flex flex-col gap-3"
+          >
+            <div className="flex flex-col gap-1">
+              <h2 id="medicines-heading" className="text-lg font-semibold">
+                Medicines ({content.medicines.length})
+              </h2>
+              <p className="text-sm text-muted">
+                {content.suspectedSelection === "not_sure"
+                  ? "The reporter was not sure which medicine to suspect, so none is marked."
+                  : `The reporter marked ${suspectedMedicinesOf(content).length} of ${content.medicines.length} as suspected.`}{" "}
+                A mark records the reporter&apos;s suspicion only; no causality
+                assessment has been made.
+              </p>
+            </div>
+            {content.medicines.map((medicine, index) => (
+              <Card key={index}>
+                <CardHeader>
+                  <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+                    {index + 1}. {medicine.name}
+                    {medicine.suspected ? (
+                      <Badge tone="warning">Suspected by the reporter</Badge>
+                    ) : content.suspectedSelection === "not_sure" ? (
+                      <Badge>Reporter not sure</Badge>
+                    ) : (
+                      <Badge>Not marked as suspected</Badge>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <dl className="divide-y divide-border">
+                    <Row label="Brand">{value(medicine.brand)}</Row>
+                    <Row label="Strength">{value(medicine.strength)}</Row>
+                    <Row label="Dose">{value(medicine.dose)}</Row>
+                    <Row label="How often">{value(medicine.frequency)}</Row>
+                    <Row label="How taken">
+                      {medicine.route
+                        ? medicineRoutes.labels[medicine.route]
+                        : null}
+                    </Row>
+                    <Row label="Status">
+                      {medicine.courseStatus
+                        ? medicineCourseStatuses.labels[medicine.courseStatus]
+                        : null}
+                    </Row>
+                    <Row label="Started">
+                      {medicine.startDate
+                        ? formatDate(medicine.startDate)
+                        : null}
+                    </Row>
+                    <Row label="Stopped or finished">
+                      {medicine.endDate ? formatDate(medicine.endDate) : null}
+                    </Row>
+                    {medicine.courseStatus === "dose_changed" ? (
+                      <>
+                        <Row label="Dose before the change">
+                          {value(medicine.previousDose)}
+                        </Row>
+                        <Row label="How often, before">
+                          {value(medicine.previousFrequency)}
+                        </Row>
+                        <Row label="Changed (approximate)">
+                          {medicine.changeDate
+                            ? formatDate(medicine.changeDate)
+                            : null}
+                        </Row>
+                      </>
+                    ) : null}
+                    <Row label="Manufacturer">
+                      {value(medicine.manufacturer)}
+                    </Row>
+                    <Row label="Batch or lot">
+                      {value(medicine.batchNumber)}
+                    </Row>
+                    <Row label="Expiry">{value(medicine.expiryDate)}</Row>
+                    <Row label="Details checked from">
+                      {medicine.detailsSource
+                        ? productDetailSources.labels[medicine.detailsSource]
+                        : null}
+                    </Row>
+                  </dl>
+                </CardContent>
+              </Card>
+            ))}
+          </section>
 
           <Card>
             <CardHeader>

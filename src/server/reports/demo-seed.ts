@@ -1,5 +1,6 @@
 import { indianStatesAndUts } from "@/lib/reports/constants";
 import { findMissingInformation } from "@/lib/reports/missing-information";
+import { toMedicineEntry } from "@/lib/reports/medicines";
 import type { ReportContent } from "@/lib/reports/schema";
 import type { StatusEvent } from "@/lib/review/types";
 import type { StoredReport } from "./repository";
@@ -25,15 +26,24 @@ const handWrittenSeedReports: SeedReport[] = [
         sex: "female",
         state: "Karnataka",
       },
-      suspectedMedicines: [
-        {
+      medicines: [
+        toMedicineEntry({
           name: "Amoxicillin",
-          dose: "500 mg",
+          strength: "500 mg",
+          dose: "1 capsule",
           route: "oral",
           frequency: "Three times a day",
           startDate: "2026-08-28",
-        },
+          endDate: "2026-08-31",
+          courseStatus: "stopped",
+          manufacturer: "Synthetic Example Pharma",
+          batchNumber: "SYN-B1234",
+          expiryDate: "2027-06",
+          detailsSource: "pack_or_label",
+          suspected: true,
+        }),
       ],
+      suspectedSelection: "marked",
       reaction: {
         description:
           "[Synthetic demo record] Itchy red rash on both arms noticed on the third day of the course.",
@@ -62,22 +72,27 @@ const handWrittenSeedReports: SeedReport[] = [
         sex: "male",
         state: "Maharashtra",
       },
-      suspectedMedicines: [
-        {
+      medicines: [
+        toMedicineEntry({
           name: "Metformin",
           dose: "500 mg",
           route: "oral",
           frequency: "Twice a day",
-          startDate: null,
-        },
-        {
+          courseStatus: "currently_taking",
+          suspected: false,
+        }),
+        toMedicineEntry({
           name: "Atorvastatin",
-          dose: null,
           route: "oral",
           frequency: "Once at night",
           startDate: "2026-07-15",
-        },
+          courseStatus: "dose_changed",
+          previousDose: "10 mg",
+          changeDate: "2026-08-20",
+          suspected: true,
+        }),
       ],
+      suspectedSelection: "marked",
       reaction: {
         description:
           "[Synthetic demo record] Reported muscle aches in both legs and tiredness for about a week.",
@@ -92,8 +107,8 @@ const handWrittenSeedReports: SeedReport[] = [
       aiAssisted: false,
     },
     missingFields: [
-      "suspectedMedicines.0.startDate",
-      "suspectedMedicines.1.dose",
+      "medicines.0.startDate",
+      "medicines.1.dose",
       "reaction.onsetDate",
       "reaction.medicalAttention",
     ],
@@ -111,15 +126,20 @@ const handWrittenSeedReports: SeedReport[] = [
         sex: "female",
         state: "Tamil Nadu",
       },
-      suspectedMedicines: [
-        {
+      medicines: [
+        toMedicineEntry({
           name: "Ibuprofen suspension",
+          strength: "100 mg/5 ml",
           dose: "100 mg",
           route: "oral",
           frequency: "Every 8 hours",
           startDate: "2026-09-18",
-        },
+          endDate: "2026-09-19",
+          courseStatus: "stopped",
+          suspected: true,
+        }),
       ],
+      suspectedSelection: "marked",
       reaction: {
         description:
           "[Synthetic demo record] Swelling around the eyes and hives about two hours after a dose.",
@@ -242,7 +262,9 @@ export function generateSyntheticReports(
     const chosen = new Set<(typeof MEDICINES)[number]>();
     while (chosen.size < medicineCount) chosen.add(pick(MEDICINES));
     const startDaysBefore = 3 + Math.floor(random() * 20);
-    const suspectedMedicines = [...chosen].map((medicine) => ({
+    // Same random draws as before Milestone 6, so the generated data is unchanged.
+    const medicines = [...chosen].map((medicine) => ({
+      ...toMedicineEntry({ name: medicine.name, suspected: true }),
       name: medicine.name,
       dose: random() < 0.85 ? medicine.dose : null,
       route: "oral" as const,
@@ -269,9 +291,10 @@ export function generateSyntheticReports(
         sex: random() < 0.85 ? (random() < 0.5 ? "female" : "male") : null,
         state: random() < 0.8 ? pick(STATES) : null,
       },
-      suspectedMedicines,
+      medicines,
+      suspectedSelection: "marked",
       reaction: {
-        description: `[Synthetic demo record] Reported ${symptoms.join(" and ")} while taking ${suspectedMedicines.map((m) => m.name.toLowerCase()).join(" and ")}.`,
+        description: `[Synthetic demo record] Reported ${symptoms.join(" and ")} while taking ${medicines.map((m) => m.name.toLowerCase()).join(" and ")}.`,
         onsetDate,
         onsetTime: null,
         symptoms,

@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import {
   indianStatesAndUts,
   medicalAttentionOptions,
+  medicineCourseStatuses,
   medicineRoutes,
   patientSexes,
+  productDetailSources,
   reactionOutcomes,
   reporterTypes,
 } from "@/lib/reports/constants";
@@ -102,12 +104,37 @@ export function ReportSummary({
         </Row>
       </Section>
 
-      <Section title="Suspected medicines" step="medicines" onEdit={onEdit}>
-        {report.suspectedMedicines.map((medicine, index) => (
+      <Section title="Medicines" step="medicines" onEdit={onEdit}>
+        <Row label="Suspected">
+          {report.suspectedSelection === "not_sure" ? (
+            <span>Not sure which medicine</span>
+          ) : (
+            <span>
+              {report.medicines
+                .filter((medicine) => medicine.suspected)
+                .map((medicine) => medicine.name)
+                .join(", ")}
+            </span>
+          )}
+        </Row>
+        {report.medicines.map((medicine, index) => (
           <div key={index} className="py-2">
             <p className="pt-1 text-sm font-medium">
               {index + 1}. {medicine.name}
+              {medicine.suspected ? (
+                <span className="font-normal text-muted"> · suspected</span>
+              ) : null}
             </p>
+            {medicine.brand ? (
+              <Row label="Brand">
+                <Value value={medicine.brand} />
+              </Row>
+            ) : null}
+            {medicine.strength ? (
+              <Row label="Strength">
+                <Value value={medicine.strength} />
+              </Row>
+            ) : null}
             <Row label="Dose">
               <Value value={medicine.dose} />
             </Row>
@@ -117,9 +144,56 @@ export function ReportSummary({
             <Row label="How it was taken">
               <Value value={medicine.route} labels={medicineRoutes.labels} />
             </Row>
+            <Row label="Status">
+              <Value
+                value={medicine.courseStatus}
+                labels={medicineCourseStatuses.labels}
+              />
+            </Row>
             <Row label="Date started">
               <Value value={medicine.startDate} />
             </Row>
+            {medicine.endDate ? (
+              <Row label="Date stopped or finished">
+                <Value value={medicine.endDate} />
+              </Row>
+            ) : null}
+            {medicine.courseStatus === "dose_changed" ? (
+              <Row label="Before the change">
+                <Value
+                  value={
+                    [
+                      medicine.previousDose,
+                      medicine.previousFrequency,
+                      medicine.changeDate
+                        ? `changed around ${medicine.changeDate}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(", ") || null
+                  }
+                />
+              </Row>
+            ) : null}
+            {medicine.manufacturer ||
+            medicine.batchNumber ||
+            medicine.expiryDate ? (
+              <Row label="Product details">
+                <Value
+                  value={[
+                    medicine.manufacturer,
+                    medicine.batchNumber && `batch ${medicine.batchNumber}`,
+                    medicine.expiryDate && `expiry ${medicine.expiryDate}`,
+                    medicine.detailsSource &&
+                      productDetailSources.labels[
+                        medicine.detailsSource
+                      ].toLowerCase(),
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}
+                />
+              </Row>
+            ) : null}
           </div>
         ))}
       </Section>

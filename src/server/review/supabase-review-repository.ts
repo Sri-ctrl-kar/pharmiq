@@ -1,11 +1,14 @@
 import { z } from "zod";
 import {
   medicalAttentionOptions,
+  medicineCourseStatuses,
   medicineRoutes,
   patientSexes,
+  productDetailSources,
   reactionOutcomes,
   reporterTypes,
   reportStatuses,
+  suspectedSelections,
 } from "@/lib/reports/constants";
 import type { StatusChange } from "@/lib/review/status";
 import type { ReviewReport, ReviewerIdentity } from "@/lib/review/types";
@@ -64,7 +67,8 @@ export const REVIEW_SELECT = [
   "medical_history",
   "ai_assisted",
   "missing_fields",
-  "report_medicines(position,name,dose,route,frequency,start_date)",
+  "suspected_selection",
+  "report_medicines(position,name,brand,strength,dose,route,frequency,start_date,end_date,course_status,previous_dose,previous_frequency,change_date,manufacturer,batch_number,expiry_month,details_source,is_suspected)",
   "report_status_events(from_status,to_status,note,reviewer_id,created_at)",
 ].join(",");
 
@@ -90,14 +94,27 @@ const rowSchema = z.object({
   medical_history: z.string().nullable(),
   ai_assisted: z.boolean().nullable(),
   missing_fields: z.array(z.string()).nullable(),
+  suspected_selection: z.enum(suspectedSelections.values),
   report_medicines: z.array(
     z.object({
       position: z.number(),
       name: z.string(),
+      brand: z.string().nullable(),
+      strength: z.string().nullable(),
       dose: z.string().nullable(),
       route: z.enum(medicineRoutes.values).nullable(),
       frequency: z.string().nullable(),
       start_date: z.string().nullable(),
+      end_date: z.string().nullable(),
+      course_status: z.enum(medicineCourseStatuses.values).nullable(),
+      previous_dose: z.string().nullable(),
+      previous_frequency: z.string().nullable(),
+      change_date: z.string().nullable(),
+      manufacturer: z.string().nullable(),
+      batch_number: z.string().nullable(),
+      expiry_month: z.string().nullable(),
+      details_source: z.enum(productDetailSources.values).nullable(),
+      is_suspected: z.boolean(),
     }),
   ),
   report_status_events: z
@@ -138,15 +155,28 @@ export function toReviewReport(
         sex: row.patient_sex,
         state: row.patient_state as ReviewReport["content"]["patient"]["state"],
       },
-      suspectedMedicines: [...row.report_medicines]
+      medicines: [...row.report_medicines]
         .sort((a, b) => a.position - b.position)
         .map((m) => ({
           name: m.name,
+          brand: m.brand,
+          strength: m.strength,
           dose: m.dose,
           route: m.route,
           frequency: m.frequency,
           startDate: m.start_date,
+          endDate: m.end_date,
+          courseStatus: m.course_status,
+          previousDose: m.previous_dose,
+          previousFrequency: m.previous_frequency,
+          changeDate: m.change_date,
+          manufacturer: m.manufacturer,
+          batchNumber: m.batch_number,
+          expiryDate: m.expiry_month,
+          detailsSource: m.details_source,
+          suspected: m.is_suspected,
         })),
+      suspectedSelection: row.suspected_selection,
       reaction: {
         description: row.reaction_description,
         onsetDate: row.reaction_onset_date,

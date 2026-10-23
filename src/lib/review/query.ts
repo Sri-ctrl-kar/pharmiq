@@ -7,6 +7,7 @@ import {
   type ReactionOutcome,
   type ReportStatus,
 } from "@/lib/reports/constants";
+import { suspectedOrAllNames } from "@/lib/reports/medicines";
 import type { ReviewReport } from "./types";
 
 /**
@@ -117,7 +118,7 @@ function matchesText(report: ReviewReport, needle: string): boolean {
     report.reportId,
     content.reaction.description,
     ...content.reaction.symptoms,
-    ...content.suspectedMedicines.map((m) => m.name),
+    ...content.medicines.flatMap((m) => [m.name, m.brand ?? ""]),
     content.otherMedicines ?? "",
   ]
     .join("\n")
@@ -150,8 +151,10 @@ export function filterReports(
     if (query.to && day > query.to) return false;
     if (
       query.medicine &&
-      !content.suspectedMedicines.some((m) =>
-        lower(m.name).includes(lower(query.medicine)),
+      !content.medicines.some((m) =>
+        [m.name, m.brand ?? ""].some((name) =>
+          lower(name).includes(lower(query.medicine)),
+        ),
       )
     ) {
       return false;
@@ -187,8 +190,8 @@ export function sortReports(
       );
     case "medicine":
       return sorted.sort((a, b) => {
-        const left = a.content.suspectedMedicines[0]?.name ?? "";
-        const right = b.content.suspectedMedicines[0]?.name ?? "";
+        const left = suspectedOrAllNames(a.content)[0] ?? "";
+        const right = suspectedOrAllNames(b.content)[0] ?? "";
         return (
           left.localeCompare(right, "en", { sensitivity: "base" }) ||
           byNewest(a, b)

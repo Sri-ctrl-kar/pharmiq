@@ -77,9 +77,10 @@ export function toPublicRecord(report: {
     ageBand: ageBandOf(content.patient.ageYears),
     outcome: content.reaction.outcome,
     medicalAttention: content.reaction.medicalAttention,
-    medicines: content.suspectedMedicines.map(
-      (medicine) => medicine.name ?? "",
-    ),
+    // Only medicines the reporter marked as suspected (none when "Not sure").
+    medicines: content.medicines
+      .filter((medicine) => medicine.suspected)
+      .map((medicine) => medicine.name ?? ""),
     reactionTerms: content.reaction.symptoms ?? [],
   };
 }

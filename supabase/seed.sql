@@ -28,8 +28,9 @@ insert into public.reports (
    null, 'No known allergies reported', '{}', true)
 on conflict (public_id) do nothing;
 
-insert into public.report_medicines (report_id, position, name, dose, route, frequency, start_date)
-select r.id, m.position, m.name, m.dose, m.route::public.medicine_route, m.frequency, m.start_date
+-- Requires migrations up to 20261026000000_medicine_entries.sql (is_suspected has no default).
+insert into public.report_medicines (report_id, position, name, dose, route, frequency, start_date, is_suspected)
+select r.id, m.position, m.name, m.dose, m.route::public.medicine_route, m.frequency, m.start_date, true
 from (values
   ('ADR-2026-SYN001', 1, 'Amoxicillin', '500 mg', 'oral', 'Three times a day', date '2026-08-28'),
   ('ADR-2026-SYN002', 1, 'Metformin', '500 mg', 'oral', 'Twice a day', null),

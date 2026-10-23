@@ -18,10 +18,10 @@ describe("findMissingInformation", () => {
     ).toEqual([
       "patient.ageYears",
       "patient.sex",
-      "suspectedMedicines.0.dose",
-      "suspectedMedicines.0.route",
-      "suspectedMedicines.0.frequency",
-      "suspectedMedicines.0.startDate",
+      "medicines.0.dose",
+      "medicines.0.route",
+      "medicines.0.frequency",
+      "medicines.0.startDate",
       "reaction.onsetDate",
       "reaction.outcome",
       "reaction.medicalAttention",
@@ -29,15 +29,15 @@ describe("findMissingInformation", () => {
   });
 
   it("names the medicine when several are listed", () => {
-    const medicine = validDraft().suspectedMedicines[0];
+    const medicine = validDraft().medicines[0];
     const draft = validDraft({
-      suspectedMedicines: [
+      medicines: [
         medicine,
-        { ...medicine, name: "Cetirizine", dose: "" },
+        { ...medicine, name: "Cetirizine", dose: "", suspected: false },
       ],
     });
     expect(findMissingInformation(content(draft))).toEqual([
-      { field: "suspectedMedicines.1.dose", label: "Cetirizine: Dose" },
+      { field: "medicines.1.dose", label: "Cetirizine: Dose" },
     ]);
   });
 

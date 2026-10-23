@@ -34,15 +34,15 @@ apparent pattern between a medicine and a reaction is random.
 Records are reduced to `PublicRecord` (`src/lib/analytics/public-analytics.ts`) before
 leaving the dataset module. `toPublicRecord` refuses any record not flagged synthetic.
 
-| Kept                                                | Dropped                                              |
-| --------------------------------------------------- | ---------------------------------------------------- |
-| Submission day (IST)                                | Report ID, exact submission time                     |
-| Review status                                       | Review notes, reviewer, status history               |
-| Reporter type                                       | Reporter contact details (never collected)           |
-| Patient sex, age **band** (0–17, 18–44, 45–64, 65+) | Initials, exact age, state/UT                        |
-| Outcome, medical attention                          | Description, onset date/time                         |
-| Suspected medicine **names**                        | Dose, frequency, route, start date                   |
-| Reaction terms (reporter's words)                   | Other medicines, medical history, AI-assistance flag |
+| Kept                                                    | Dropped                                                                                                              |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Submission day (IST)                                    | Report ID, exact submission time                                                                                     |
+| Review status                                           | Review notes, reviewer, status history                                                                               |
+| Reporter type                                           | Reporter contact details (never collected)                                                                           |
+| Patient sex, age **band** (0–17, 18–44, 45–64, 65+)     | Initials, exact age, state/UT                                                                                        |
+| Outcome, medical attention                              | Description, onset date/time                                                                                         |
+| Names of medicines the reporter **marked as suspected** | Non-suspected medicines; dose, frequency, route, dates, course changes, brand, strength, manufacturer, batch, expiry |
+| Reaction terms (reporter's words)                       | Other medicines, medical history, AI-assistance flag                                                                 |
 
 The page receives only the computed aggregates. State/UT is not charted: on synthetic data
 a map would invite reading it as geographic prevalence.

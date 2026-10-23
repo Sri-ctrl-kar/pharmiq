@@ -1,35 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import { FlaskConical, Plus, Trash2, X } from "lucide-react";
-import { Alert } from "@/components/ui/alert";
+import { FlaskConical, Plus, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RadioCardGroup } from "@/components/ui/choice";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { syntheticExtractionCases } from "@/lib/ai/synthetic-examples";
 import {
-  MAX_SUSPECTED_MEDICINES,
   MAX_SYMPTOMS,
   indianStatesAndUts,
   medicalAttentionOptions,
-  medicineRoutes,
   patientSexes,
   reactionOutcomes,
   reporterTypes,
   type ReporterType,
 } from "@/lib/reports/constants";
-import type {
-  FieldErrors,
-  MedicineDraft,
-  ReportDraft,
-} from "@/lib/reports/schema";
+import type { FieldErrors, ReportDraft } from "@/lib/reports/schema";
 
 export const fieldId = (path: string) => `f-${path.replace(/\./g, "-")}`;
 
-const NOT_PROVIDED = "Leave blank if not known";
+export const NOT_PROVIDED = "Leave blank if not known";
 
-function OptionList({ labels }: { labels: Record<string, string> }) {
+export function OptionList({ labels }: { labels: Record<string, string> }) {
   return Object.entries(labels).map(([value, label]) => (
     <option key={value} value={value}>
       {label}
@@ -37,13 +30,13 @@ function OptionList({ labels }: { labels: Record<string, string> }) {
   ));
 }
 
-function todayLocal(): string {
+export function todayLocal(): string {
   const now = new Date();
   now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
   return now.toISOString().slice(0, 10);
 }
 
-function StepIntro({ children }: { children: React.ReactNode }) {
+export function StepIntro({ children }: { children: React.ReactNode }) {
   return <p className="text-sm text-muted">{children}</p>;
 }
 
@@ -161,167 +154,6 @@ export function ReporterStep({
           </Field>
         </div>
       </fieldset>
-    </div>
-  );
-}
-
-type MedicinesStepProps = {
-  draft: ReportDraft;
-  errors: FieldErrors;
-  onMedicine: (index: number, key: keyof MedicineDraft, value: string) => void;
-  onAdd: () => void;
-  onRemove: (index: number) => void;
-};
-
-export function MedicinesStep({
-  draft,
-  errors,
-  onMedicine,
-  onAdd,
-  onRemove,
-}: MedicinesStepProps) {
-  const max = todayLocal();
-  const canAdd = draft.suspectedMedicines.length < MAX_SUSPECTED_MEDICINES;
-  return (
-    <div className="flex flex-col gap-5">
-      <StepIntro>
-        List the medicine(s) you suspect may be linked to the reaction. Other
-        medicines taken at the same time can be added in a later step. Only the
-        name is required — leave anything you don&apos;t know blank.
-      </StepIntro>
-      {errors.suspectedMedicines ? (
-        <Alert tone="danger">{errors.suspectedMedicines}</Alert>
-      ) : null}
-
-      {draft.suspectedMedicines.map((medicine, index) => {
-        const path = (key: string) => `suspectedMedicines.${index}.${key}`;
-        return (
-          <fieldset
-            key={index}
-            className="flex flex-col gap-4 rounded-lg border border-border p-4 sm:p-5"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <legend className="text-sm font-semibold">
-                Suspected medicine {index + 1}
-              </legend>
-              {index > 0 ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onRemove(index)}
-                  aria-label={`Remove suspected medicine ${index + 1}`}
-                >
-                  <Trash2 aria-hidden="true" />
-                  Remove
-                </Button>
-              ) : null}
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field
-                id={fieldId(path("name"))}
-                label="Medicine name"
-                required
-                hint="Brand or generic name, as on the pack or prescription."
-                error={errors[path("name")]}
-                className="sm:col-span-2"
-              >
-                {(props) => (
-                  <Input
-                    {...props}
-                    autoComplete="off"
-                    value={medicine.name}
-                    onChange={(event) =>
-                      onMedicine(index, "name", event.target.value)
-                    }
-                  />
-                )}
-              </Field>
-              <Field
-                id={fieldId(path("dose"))}
-                label="Dose"
-                hint={`e.g. 500 mg. ${NOT_PROVIDED}.`}
-                error={errors[path("dose")]}
-              >
-                {(props) => (
-                  <Input
-                    {...props}
-                    autoComplete="off"
-                    value={medicine.dose}
-                    onChange={(event) =>
-                      onMedicine(index, "dose", event.target.value)
-                    }
-                  />
-                )}
-              </Field>
-              <Field
-                id={fieldId(path("frequency"))}
-                label="How often"
-                hint={`e.g. twice a day. ${NOT_PROVIDED}.`}
-                error={errors[path("frequency")]}
-              >
-                {(props) => (
-                  <Input
-                    {...props}
-                    autoComplete="off"
-                    value={medicine.frequency}
-                    onChange={(event) =>
-                      onMedicine(index, "frequency", event.target.value)
-                    }
-                  />
-                )}
-              </Field>
-              <Field
-                id={fieldId(path("route"))}
-                label="How it was taken"
-                error={errors[path("route")]}
-              >
-                {(props) => (
-                  <Select
-                    {...props}
-                    value={medicine.route}
-                    onChange={(event) =>
-                      onMedicine(index, "route", event.target.value)
-                    }
-                  >
-                    <option value="">Not provided</option>
-                    <OptionList labels={medicineRoutes.labels} />
-                  </Select>
-                )}
-              </Field>
-              <Field
-                id={fieldId(path("startDate"))}
-                label="Date started"
-                hint={NOT_PROVIDED}
-                error={errors[path("startDate")]}
-              >
-                {(props) => (
-                  <Input
-                    {...props}
-                    type="date"
-                    max={max}
-                    value={medicine.startDate}
-                    onChange={(event) =>
-                      onMedicine(index, "startDate", event.target.value)
-                    }
-                  />
-                )}
-              </Field>
-            </div>
-          </fieldset>
-        );
-      })}
-
-      {canAdd ? (
-        <Button variant="secondary" onClick={onAdd} className="self-start">
-          <Plus aria-hidden="true" />
-          Add another suspected medicine
-        </Button>
-      ) : (
-        <p className="text-sm text-muted">
-          Up to {MAX_SUSPECTED_MEDICINES} suspected medicines. Add others under
-          “Other information”.
-        </p>
-      )}
     </div>
   );
 }
@@ -527,8 +359,8 @@ export function HistoryStep({ draft, errors, onChange }: HistoryStepProps) {
       </StepIntro>
       <Field
         id={fieldId("otherMedicines")}
-        label="Other medicines taken around the same time"
-        hint="Including supplements and herbal or Ayurvedic products, with doses if known."
+        label="Anything else taken around the same time"
+        hint="Optional. Medicines you listed in the Medicines step do not need repeating. Include supplements and herbal or Ayurvedic products, with doses if known."
         error={errors.otherMedicines}
       >
         {(props) => (

@@ -47,12 +47,25 @@ export function toSubmitReportPayload(record: NewReportRecord) {
     medical_history: content.medicalHistory,
     ai_assisted: content.aiAssisted,
     missing_fields: record.missingFields,
-    suspected_medicines: content.suspectedMedicines.map((medicine) => ({
+    suspected_selection: content.suspectedSelection,
+    medicines: content.medicines.map((medicine) => ({
       name: medicine.name,
+      brand: medicine.brand,
+      strength: medicine.strength,
       dose: medicine.dose,
       route: medicine.route,
       frequency: medicine.frequency,
       start_date: medicine.startDate,
+      end_date: medicine.endDate,
+      course_status: medicine.courseStatus,
+      previous_dose: medicine.previousDose,
+      previous_frequency: medicine.previousFrequency,
+      change_date: medicine.changeDate,
+      manufacturer: medicine.manufacturer,
+      batch_number: medicine.batchNumber,
+      expiry_month: medicine.expiryDate,
+      details_source: medicine.detailsSource,
+      is_suspected: medicine.suspected,
     })),
   };
 }

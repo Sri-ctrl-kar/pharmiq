@@ -1,4 +1,4 @@
-import { MAX_SUSPECTED_MEDICINES, MAX_SYMPTOMS } from "@/lib/reports/constants";
+import { MAX_MEDICINES, MAX_SYMPTOMS } from "@/lib/reports/constants";
 import {
   emptyMedicineDraft,
   type MedicineDraft,
@@ -12,22 +12,35 @@ import type { VerifiedExtraction, VerifiedField } from "./extraction-schema";
  * Rules:
  * - Only suggestions the reporter accepted are applied, using their (possibly edited) value.
  * - Suggestions needing review are never accepted by default.
- * - Values the reporter already entered are never overwritten.
- * - A medicine is only added once the reporter decides how (suspected / other / skip).
+ * - Values the reporter already entered are never overwritten, including whether they
+ *   marked a medicine as suspected.
+ * - Whether a medicine is suspected is never pre-selected: the reporter chooses
+ *   "suspected", "not suspected" or "don't add" for every medicine the AI found.
+ * - Course-change details (previous dose/frequency, change date) are only applied to an
+ *   entry whose status is "dose or frequency changed".
  */
 
 export type FieldDecision = { accept: boolean; value: string };
 
 export type MedicineRoleChoice = "suspected" | "other" | "skip" | "undecided";
 
+export const medicineDecisionFields = [
+  "dose",
+  "route",
+  "frequency",
+  "startDate",
+  "endDate",
+  "courseStatus",
+  "previousDose",
+  "previousFrequency",
+  "changeDate",
+] as const;
+export type MedicineDecisionField = (typeof medicineDecisionFields)[number];
+
 export type MedicineDecision = {
   role: MedicineRoleChoice;
   name: string;
-  dose: FieldDecision;
-  route: FieldDecision;
-  frequency: FieldDecision;
-  startDate: FieldDecision;
-};
+} & Record<MedicineDecisionField, FieldDecision>;
 
 export type ExtractionDecisions = {
   medicines: MedicineDecision[];
@@ -49,16 +62,15 @@ export function initialDecisions(
 ): ExtractionDecisions {
   return {
     medicines: extraction.medicines.map((medicine) => ({
-      role: medicine.name.needsReview
-        ? "undecided"
-        : medicine.reporterRole === "unclear"
-          ? "undecided"
-          : medicine.reporterRole,
+      // Never pre-selected, even when the reporter's words suggest it.
+      role: "undecided",
       name: medicine.name.value ?? "",
-      dose: initialField(medicine.dose),
-      route: initialField(medicine.route),
-      frequency: initialField(medicine.frequency),
-      startDate: initialField(medicine.startDate),
+      ...(Object.fromEntries(
+        medicineDecisionFields.map((field) => [
+          field,
+          initialField(medicine[field]),
+        ]),
+      ) as Record<MedicineDecisionField, FieldDecision>),
     })),
     symptoms: extraction.symptoms.map(initialField),
     onsetDate: initialField(extraction.onsetDate),
@@ -80,15 +92,37 @@ export type ApplySummary = {
   applied: string[];
   /** Suggestions not applied because the reporter had already entered something. */
   kept: string[];
-  /** Suggestions not applied because of a limit. */
+  /** Suggestions not applied because of a limit or a rule. */
   skipped: string[];
 };
+
+const fieldLabels: Record<MedicineDecisionField, string> = {
+  dose: "dose",
+  route: "how taken",
+  frequency: "how often",
+  startDate: "start date",
+  endDate: "end date",
+  courseStatus: "status",
+  previousDose: "previous dose",
+  previousFrequency: "previous frequency",
+  changeDate: "change date",
+};
+const courseChangeFields: MedicineDecisionField[] = [
+  "previousDose",
+  "previousFrequency",
+  "changeDate",
+];
 
 const key = (text: string) => text.trim().toLowerCase().replace(/\s+/g, " ");
 const accepted = (decision: FieldDecision) =>
   decision.accept && decision.value.trim() !== ""
     ? decision.value.trim()
     : null;
+const isBlank = (medicine: MedicineDraft) =>
+  !medicine.suspected &&
+  Object.entries(medicine).every(
+    ([field, value]) => field === "suspected" || String(value).trim() === "",
+  );
 
 export function applyExtraction(
   draft: ReportDraft,
@@ -101,76 +135,83 @@ export function applyExtraction(
     ...draft,
     patient: { ...draft.patient },
     reaction: { ...draft.reaction, symptoms: [...draft.reaction.symptoms] },
-    suspectedMedicines: draft.suspectedMedicines.map((medicine) => ({
-      ...medicine,
-    })),
+    medicines: draft.medicines.map((medicine) => ({ ...medicine })),
   };
+  const notSure = next.suspectedSelection === "not_sure";
 
   for (const decision of decisions.medicines) {
     const name = decision.name.trim();
     if (!name || decision.role === "skip" || decision.role === "undecided")
       continue;
+    const wantsSuspected = decision.role === "suspected";
 
-    const values: Partial<MedicineDraft> = {
-      dose: accepted(decision.dose) ?? undefined,
-      route: accepted(decision.route) ?? undefined,
-      frequency: accepted(decision.frequency) ?? undefined,
-      startDate: accepted(decision.startDate) ?? undefined,
-    };
-
-    if (decision.role === "other") {
-      if (key(next.otherMedicines).includes(key(name))) {
-        kept.push(`${name} (already under other medicines)`);
-        continue;
-      }
-      const line = [
-        [name, values.dose].filter(Boolean).join(" "),
-        values.frequency,
-        values.startDate ? `started ${values.startDate}` : undefined,
-      ]
-        .filter(Boolean)
-        .join(", ");
-      next.otherMedicines = next.otherMedicines.trim()
-        ? `${next.otherMedicines.trim()}\n${line}`
-        : line;
-      applied.push(`Other medicine: ${name}`);
-      continue;
-    }
-
-    let row = next.suspectedMedicines.find(
+    let row = next.medicines.find(
       (medicine) => key(medicine.name) === key(name),
     );
-    if (!row) {
-      row = next.suspectedMedicines.find((medicine) =>
-        Object.values(medicine).every((value) => value.trim() === ""),
-      );
+    if (row) {
+      if (wantsSuspected !== row.suspected) {
+        kept.push(
+          `${name}: ${row.suspected ? "marked" : "not marked"} as suspected, as you set it`,
+        );
+      }
+    } else {
+      row = next.medicines.find(isBlank);
       if (!row) {
-        if (next.suspectedMedicines.length >= MAX_SUSPECTED_MEDICINES) {
+        if (next.medicines.length >= MAX_MEDICINES) {
           skipped.push(
-            `${name} (the form already lists ${MAX_SUSPECTED_MEDICINES} suspected medicines)`,
+            `${name} (the form already lists ${MAX_MEDICINES} medicines)`,
           );
           continue;
         }
         row = emptyMedicineDraft();
-        next.suspectedMedicines.push(row);
+        next.medicines.push(row);
       }
       row.name = name;
-      applied.push(`Suspected medicine: ${name}`);
-    }
-    for (const [field, value] of Object.entries(values) as [
-      keyof MedicineDraft,
-      string | undefined,
-    ][]) {
-      if (value === undefined) continue;
-      if (row[field].trim() === "") {
-        row[field] = value;
-        applied.push(
-          `${name}: ${field === "startDate" ? "start date" : field}`,
+      row.suspected = wantsSuspected && !notSure;
+      applied.push(
+        row.suspected
+          ? `Suspected medicine: ${name}`
+          : `Medicine (not marked as suspected): ${name}`,
+      );
+      if (wantsSuspected && notSure) {
+        kept.push(
+          `${name}: not marked as suspected, because you chose “Not sure”`,
         );
-      } else if (key(row[field]) !== key(value)) {
-        kept.push(`${name}: ${field === "startDate" ? "start date" : field}`);
       }
     }
+
+    const target = row;
+    const fill = (field: MedicineDecisionField, value: string) => {
+      if (target[field].trim() === "") {
+        target[field] = value;
+        applied.push(`${name}: ${fieldLabels[field]}`);
+      } else if (key(target[field]) !== key(value)) {
+        kept.push(`${name}: ${fieldLabels[field]}`);
+      }
+    };
+    for (const field of medicineDecisionFields) {
+      if (courseChangeFields.includes(field)) continue;
+      const value = accepted(decision[field]);
+      if (value !== null) fill(field, value);
+    }
+    for (const field of courseChangeFields) {
+      const value = accepted(decision[field]);
+      if (value === null) continue;
+      if (target.courseStatus !== "dose_changed") {
+        skipped.push(
+          `${name}: ${fieldLabels[field]} (set the status to “Dose or frequency changed” to record it)`,
+        );
+        continue;
+      }
+      fill(field, value);
+    }
+  }
+
+  if (
+    next.suspectedSelection === "" &&
+    next.medicines.some((medicine) => medicine.suspected)
+  ) {
+    next.suspectedSelection = "marked";
   }
 
   const reactionFields = [

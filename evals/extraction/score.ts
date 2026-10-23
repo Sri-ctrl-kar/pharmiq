@@ -111,7 +111,16 @@ export function scoreCase(
         detail: String(found.name.needsReview),
       });
     }
-    for (const key of ["dose", "route", "frequency", "startDate"] as const) {
+    for (const key of [
+      "dose",
+      "route",
+      "frequency",
+      "startDate",
+      "endDate",
+      "courseStatus",
+      "previousDose",
+      "changeDate",
+    ] as const) {
       if (medicine[key])
         checkField(
           `${path}.${key}`,
@@ -178,6 +187,11 @@ export function scoreCase(
         m.route,
         m.frequency,
         m.startDate,
+        m.endDate,
+        m.courseStatus,
+        m.previousDose,
+        m.previousFrequency,
+        m.changeDate,
       ]),
       ...extraction.symptoms,
       extraction.onsetDate,

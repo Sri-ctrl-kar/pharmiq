@@ -26,7 +26,7 @@ describe("buildTimeline (report details)", () => {
       },
     ],
   });
-  report.content.suspectedMedicines[1].startDate = "2026-08-10";
+  report.content.medicines[1].startDate = "2026-08-10";
 
   it("orders reporter dates, submission and status changes chronologically", () => {
     const { entries } = buildTimeline(report);
@@ -38,7 +38,7 @@ describe("buildTimeline (report details)", () => {
       ["status_change", "2026-09-13T04:00:00.000Z"],
     ]);
     expect(entries[0]).toMatchObject({
-      title: "Started Atorvastatin",
+      title: "Started Atorvastatin (suspected)",
       source: "reporter",
       detail: "500 mg",
     });

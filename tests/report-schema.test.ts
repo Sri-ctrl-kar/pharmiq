@@ -5,6 +5,7 @@ import {
   reportSubmissionSchema,
   toFieldErrors,
 } from "@/lib/reports/schema";
+import { toMedicineEntry } from "@/lib/reports/medicines";
 import { minimalDraft, validDraft } from "./fixtures";
 
 const errorsOf = (input: unknown) => {
@@ -27,7 +28,7 @@ describe("reportSubmissionSchema", () => {
       sex: "female",
       state: "Karnataka",
     });
-    expect(parsed.suspectedMedicines[0].name).toBe("Amoxicillin");
+    expect(parsed.medicines[0].name).toBe("Amoxicillin");
     expect(parsed.otherMedicines).toBeNull();
   });
 
@@ -39,29 +40,25 @@ describe("reportSubmissionSchema", () => {
       sex: null,
       state: null,
     });
-    expect(parsed.suspectedMedicines[0]).toEqual({
-      name: "Paracetamol",
-      dose: null,
-      route: null,
-      frequency: null,
-      startDate: null,
-    });
+    expect(parsed.medicines[0]).toEqual(
+      toMedicineEntry({ name: "Paracetamol", suspected: true }),
+    );
     expect(parsed.reaction.onsetDate).toBeNull();
     expect(parsed.reaction.onsetTime).toBeNull();
   });
 
   it("requires reporter type, a medicine name, a description, outcome and medical attention", () => {
     const draft = validDraft({ reporterType: "" });
-    draft.suspectedMedicines[0].name = "";
+    draft.medicines[0].name = "";
     draft.reaction.description = "";
     draft.reaction.outcome = "";
     draft.reaction.medicalAttention = "";
     expect(Object.keys(errorsOf(draft)).sort()).toEqual([
+      "medicines.0.name",
       "reaction.description",
       "reaction.medicalAttention",
       "reaction.outcome",
       "reporterType",
-      "suspectedMedicines.0.name",
     ]);
   });
 
@@ -74,10 +71,10 @@ describe("reportSubmissionSchema", () => {
   it("rejects future, impossible and malformed dates", () => {
     const draft = validDraft();
     draft.reaction.onsetDate = "2026-11-30";
-    draft.suspectedMedicines[0].startDate = "2026-02-30";
+    draft.medicines[0].startDate = "2026-02-30";
     const errors = errorsOf(draft);
     expect(errors["reaction.onsetDate"]).toMatch(/future/);
-    expect(errors["suspectedMedicines.0.startDate"]).toMatch(/valid date/);
+    expect(errors["medicines.0.startDate"]).toMatch(/valid date/);
   });
 
   it("allows today's date in time zones ahead of UTC", () => {
@@ -111,42 +108,45 @@ describe("reportSubmissionSchema", () => {
 
   it("rejects values outside the controlled vocabularies", () => {
     const draft = validDraft({ reporterType: "pharma_company" });
-    draft.suspectedMedicines[0].route = "rectal-ish";
+    draft.medicines[0].route = "rectal-ish";
     draft.patient.state = "Atlantis";
     expect(Object.keys(errorsOf(draft))).toEqual(
       expect.arrayContaining([
         "reporterType",
-        "suspectedMedicines.0.route",
+        "medicines.0.route",
         "patient.state",
       ]),
     );
   });
 
-  it("supports several suspected medicines, but not duplicates or more than five", () => {
-    const medicine = validDraft().suspectedMedicines[0];
+  it("supports several medicines, but not duplicates or more than ten", () => {
+    const medicine = validDraft().medicines[0];
     const two = validDraft({
-      suspectedMedicines: [medicine, { ...medicine, name: "Cetirizine" }],
+      medicines: [medicine, { ...medicine, name: "Cetirizine" }],
     });
     expect(reportSubmissionSchema.safeParse(two).success).toBe(true);
 
     const duplicate = validDraft({
-      suspectedMedicines: [medicine, { ...medicine, name: "amoxicillin" }],
+      medicines: [medicine, { ...medicine, name: "amoxicillin" }],
     });
-    expect(errorsOf(duplicate)["suspectedMedicines.1.name"]).toMatch(
-      /already listed/,
-    );
+    expect(errorsOf(duplicate)["medicines.1.name"]).toMatch(/already listed/);
 
-    const six = validDraft({
-      suspectedMedicines: Array.from({ length: 6 }, (_, i) => ({
+    const ten = validDraft({
+      medicines: Array.from({ length: 10 }, (_, i) => ({
         ...medicine,
         name: `Medicine ${i}`,
       })),
     });
-    expect(errorsOf(six)).toHaveProperty("suspectedMedicines");
+    expect(reportSubmissionSchema.safeParse(ten).success).toBe(true);
+    const eleven = validDraft({
+      medicines: Array.from({ length: 11 }, (_, i) => ({
+        ...medicine,
+        name: `Medicine ${i}`,
+      })),
+    });
+    expect(errorsOf(eleven)).toHaveProperty("medicines");
 
-    expect(errorsOf(validDraft({ suspectedMedicines: [] }))).toHaveProperty(
-      "suspectedMedicines",
-    );
+    expect(errorsOf(validDraft({ medicines: [] }))).toHaveProperty("medicines");
   });
 
   it("rejects oversized free text and a malformed idempotency key", () => {
@@ -171,7 +171,8 @@ describe("errorsForStep", () => {
     const errors = {
       reporterType: "a",
       "patient.ageYears": "b",
-      "suspectedMedicines.0.name": "c",
+      "medicines.0.name": "c",
+      suspectedSelection: "f",
       "reaction.outcome": "d",
       declaration: "e",
     };
@@ -180,7 +181,8 @@ describe("errorsForStep", () => {
       "patient.ageYears",
     ]);
     expect(Object.keys(errorsForStep(errors, "medicines"))).toEqual([
-      "suspectedMedicines.0.name",
+      "medicines.0.name",
+      "suspectedSelection",
     ]);
     expect(Object.keys(errorsForStep(errors, "review"))).toEqual([
       "declaration",

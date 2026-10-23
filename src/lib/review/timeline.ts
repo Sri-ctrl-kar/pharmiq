@@ -5,7 +5,13 @@ export type TimelineEntry = {
   /** ISO date (YYYY-MM-DD) for reported dates, full ISO timestamp for system events. */
   when: string;
   precision: "date" | "datetime";
-  kind: "medicine_started" | "reaction_onset" | "submitted" | "status_change";
+  kind:
+    | "medicine_started"
+    | "medicine_changed"
+    | "medicine_ended"
+    | "reaction_onset"
+    | "submitted"
+    | "status_change";
   title: string;
   detail: string | null;
   /** Who supplied it: the reporter's own account, or the system/reviewer record. */
@@ -23,20 +29,66 @@ export function buildTimeline(report: ReviewReport): Timeline {
   const entries: TimelineEntry[] = [];
   const notProvided: string[] = [];
 
-  for (const medicine of report.content.suspectedMedicines) {
+  for (const medicine of report.content.medicines) {
+    const label = `${medicine.name}${medicine.suspected ? " (suspected)" : ""}`;
     if (medicine.startDate) {
       entries.push({
         when: medicine.startDate,
         precision: "date",
         kind: "medicine_started",
-        title: `Started ${medicine.name}`,
+        title: `Started ${label}`,
         detail:
-          [medicine.dose, medicine.frequency].filter(Boolean).join(", ") ||
-          null,
+          [medicine.strength, medicine.dose, medicine.frequency]
+            .filter(Boolean)
+            .join(", ") || null,
         source: "reporter",
       });
     } else {
       notProvided.push(`Start date for ${medicine.name}`);
+    }
+    if (medicine.courseStatus === "dose_changed") {
+      if (medicine.changeDate) {
+        const before = [medicine.previousDose, medicine.previousFrequency]
+          .filter(Boolean)
+          .join(", ");
+        const after = [medicine.dose, medicine.frequency]
+          .filter(Boolean)
+          .join(", ");
+        entries.push({
+          when: medicine.changeDate,
+          precision: "date",
+          kind: "medicine_changed",
+          title: `Dose or frequency of ${label} changed (approximate date)`,
+          detail:
+            before || after
+              ? `${before || "not provided"} → ${after || "not provided"}`
+              : null,
+          source: "reporter",
+        });
+      } else {
+        notProvided.push(`Date of the dose change for ${medicine.name}`);
+      }
+    }
+    if (medicine.endDate) {
+      entries.push({
+        when: medicine.endDate,
+        precision: "date",
+        kind: "medicine_ended",
+        title: `${
+          medicine.courseStatus === "completed"
+            ? "Finished"
+            : medicine.courseStatus === "stopped"
+              ? "Stopped"
+              : "Stopped or finished"
+        } ${label}`,
+        detail: null,
+        source: "reporter",
+      });
+    } else if (
+      medicine.courseStatus === "stopped" ||
+      medicine.courseStatus === "completed"
+    ) {
+      notProvided.push(`End date for ${medicine.name}`);
     }
   }
 

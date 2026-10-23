@@ -14,6 +14,7 @@ import {
   weekStart,
   type PublicRecord,
 } from "@/lib/analytics/public-analytics";
+import { toMedicineEntry } from "@/lib/reports/medicines";
 import { reviewReport } from "../review/fixtures";
 
 /** SYNTHETIC public record for tests. */
@@ -44,15 +45,20 @@ describe("toPublicRecord (the boundary into public analytics)", () => {
         sex: "male",
         state: "Ladakh",
       },
-      suspectedMedicines: [
-        {
+      medicines: [
+        toMedicineEntry({
           name: "Ibuprofen",
           dose: "MARKER-DOSE",
           route: "oral",
           frequency: "MARKER-FREQUENCY",
           startDate: "2026-03-01",
-        },
+          batchNumber: "MARKER-BATCH",
+          manufacturer: "MARKER-MAKER",
+          suspected: true,
+        }),
+        toMedicineEntry({ name: "Cetirizine", suspected: false }),
       ],
+      suspectedSelection: "marked",
       reaction: {
         description: "MARKER description of what happened",
         onsetDate: "2026-03-05",

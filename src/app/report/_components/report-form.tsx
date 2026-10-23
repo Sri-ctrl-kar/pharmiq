@@ -11,7 +11,13 @@ import { newIdempotencyKey } from "@/lib/reports/idempotency";
 import { findMissingInformation } from "@/lib/reports/missing-information";
 import { findPossibleIdentifiers } from "@/lib/reports/privacy";
 import {
-  emptyMedicineDraft,
+  addMedicine,
+  removeMedicine,
+  setMedicineSuspected,
+  setNotSure,
+  updateMedicine,
+} from "@/lib/reports/medicines";
+import {
   emptyReportDraft,
   errorsForStep,
   reportSubmissionSchema,
@@ -19,7 +25,6 @@ import {
   toReportContent,
   type FieldErrors,
   type FormStep,
-  type MedicineDraft,
   type ReportDraft,
 } from "@/lib/reports/schema";
 import {
@@ -38,11 +43,11 @@ import { AiAssistPanel } from "./ai-assist-panel";
 import {
   DescribeStep,
   HistoryStep,
-  MedicinesStep,
   ReactionStep,
   ReporterStep,
   fieldId,
 } from "./form-steps";
+import { MedicinesStep } from "./medicines-step";
 import {
   IdentifierWarning,
   MissingInformationNotice,
@@ -53,7 +58,7 @@ import { SubmissionSuccess } from "./submission-success";
 const steps: { id: FormStep; title: string }[] = [
   { id: "reporter", title: "About the report" },
   { id: "describe", title: "What happened" },
-  { id: "medicines", title: "Suspected medicines" },
+  { id: "medicines", title: "Medicines" },
   { id: "reaction", title: "Reaction details" },
   { id: "history", title: "Other information" },
   { id: "review", title: "Review and submit" },
@@ -303,31 +308,15 @@ function ReportForm({
             <MedicinesStep
               draft={draft}
               errors={errors}
-              onMedicine={(index, key: keyof MedicineDraft, value) =>
-                update((d) => ({
-                  ...d,
-                  suspectedMedicines: d.suspectedMedicines.map((medicine, i) =>
-                    i === index ? { ...medicine, [key]: value } : medicine,
-                  ),
-                }))
+              onMedicine={(index, field, value) =>
+                update((d) => updateMedicine(d, index, field, value))
               }
-              onAdd={() =>
-                update((d) => ({
-                  ...d,
-                  suspectedMedicines: [
-                    ...d.suspectedMedicines,
-                    emptyMedicineDraft(),
-                  ],
-                }))
+              onAdd={() => update(addMedicine)}
+              onRemove={(index) => update((d) => removeMedicine(d, index))}
+              onSuspected={(index, suspected) =>
+                update((d) => setMedicineSuspected(d, index, suspected))
               }
-              onRemove={(index) =>
-                update((d) => ({
-                  ...d,
-                  suspectedMedicines: d.suspectedMedicines.filter(
-                    (_, i) => i !== index,
-                  ),
-                }))
-              }
+              onNotSure={(notSure) => update((d) => setNotSure(d, notSure))}
             />
           ) : null}
 

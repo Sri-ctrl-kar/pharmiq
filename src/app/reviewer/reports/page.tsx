@@ -28,6 +28,7 @@ import {
   sortOptions,
   type ReportQuery,
 } from "@/lib/review/query";
+import { suspectedMedicinesOf } from "@/lib/reports/medicines";
 import { reviewerStatusLabels } from "@/lib/review/status";
 import type { ReviewReport } from "@/lib/review/types";
 import { safetyCopy } from "@/lib/site";
@@ -188,8 +189,30 @@ function ReportRow({ report }: { report: ReviewReport }) {
         </div>
         <div className="grid gap-1 text-sm sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:gap-4">
           <p>
-            <span className="text-muted">Suspected: </span>
-            {content.suspectedMedicines.map((m) => m.name).join(", ")}
+            {content.suspectedSelection === "not_sure" ? (
+              <>
+                <span className="text-muted">Not sure which of: </span>
+                {content.medicines.map((m) => m.name).join(", ")}
+              </>
+            ) : (
+              <>
+                <span className="text-muted">Suspected: </span>
+                {suspectedMedicinesOf(content)
+                  .map((m) => m.name)
+                  .join(", ")}
+              </>
+            )}
+            {content.suspectedSelection !== "not_sure" &&
+            content.medicines.some((m) => !m.suspected) ? (
+              <span className="text-muted">
+                {" "}
+                · also listed:{" "}
+                {content.medicines
+                  .filter((m) => !m.suspected)
+                  .map((m) => m.name)
+                  .join(", ")}
+              </span>
+            ) : null}
           </p>
           <p className="truncate">
             <span className="text-muted">Symptoms: </span>
@@ -263,7 +286,7 @@ function Filters({ query }: { query: ReportQuery }) {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="filter-medicine">Suspected medicine</Label>
+              <Label htmlFor="filter-medicine">Medicine (any listed)</Label>
               <Input
                 id="filter-medicine"
                 name="medicine"

@@ -14,6 +14,10 @@ import type {
   ReviewRepository,
   StatusUpdateResult,
 } from "@/server/review/repository";
+import {
+  normaliseReportContent,
+  type StoredContent,
+} from "@/lib/reports/medicines";
 import { syntheticSeedReports, type SeedReport } from "./demo-seed";
 import {
   ReportIdConflictError,
@@ -27,7 +31,9 @@ import {
 export const LOCAL_DEMO_NOTICE =
   "LOCAL DEMONSTRATION STORAGE. Plain JSON file on the app server: not encrypted, no access control, no backups. Not a secure production database. Use synthetic or test data only.";
 
-type DemoRow = StoredReport & {
+type DemoRow = Omit<StoredReport, "content"> & {
+  /** Rows written before Milestone 6 hold `suspectedMedicines` instead of `medicines`. */
+  content: StoredContent;
   idempotencyKey: string | null;
   /** Status history (added in Milestone 4; absent in older demo files). */
   events?: StatusEvent[];
@@ -90,7 +96,10 @@ export class LocalDemoReportRepository
   async list(): Promise<StoredReport[]> {
     const file = await this.serialise(() => this.load());
     return file.reports
-      .map(({ idempotencyKey: _key, ...report }) => report)
+      .map(({ idempotencyKey: _key, ...report }) => ({
+        ...report,
+        content: normaliseReportContent(report.content),
+      }))
       .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
   }
 
@@ -214,14 +223,14 @@ function toReviewReport(row: DemoRow): ReviewReport {
     updatedAt: row.updatedAt ?? events.at(-1)?.at ?? row.submittedAt,
     status: row.status,
     isSynthetic: row.isSynthetic,
-    content: {
+    content: normaliseReportContent({
       ...row.content,
       reaction: {
         ...row.content.reaction,
         symptoms: row.content.reaction.symptoms ?? [],
       },
       aiAssisted: row.content.aiAssisted ?? false,
-    },
+    }),
     missingFields: row.missingFields,
     events,
   };

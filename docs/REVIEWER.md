@@ -89,15 +89,18 @@ Limitations — treat it as a demo gate, not as authentication:
     (each counted once per report), and median days from submission to first "reviewed".
     Labelled with `SyntheticDataBanner`; each chart has a "View as table" fallback.
 - **Review queue** (`/reviewer/reports`) — search (report ID, medicine, symptom,
-  description), filters for suspected medicine, status, outcome, medical attention,
+  description), filters for medicine (any listed, suspected or not), status, outcome, medical attention,
   reporter type, AI assistance, submission date range (IST), data source and reported
   serious events; sort by newest, oldest, onset date, status or medicine; 20 per page.
   Each row is marked "Synthetic demonstration data" or "Submitted through the form".
 - **Report detail** (`/reviewer/reports/[reportId]`) — the data source, the reporter's
-  original description (unchanged), whether AI assistance was used, suspected medicines,
-  reporter-confirmed details with "Not provided" for anything missing, a timeline
-  (medicine start, reaction onset, submission, status changes; missing dates are listed,
-  never estimated) and the status form.
+  original description (unchanged), whether AI assistance was used, one card per medicine
+  (brand, strength, dose, frequency, route, status, start/end dates, dose before a change
+  and when, manufacturer, batch, expiry, how details were checked — "Not provided" for
+  anything missing) marked "Suspected by the reporter", "Not marked as suspected" or
+  "Reporter not sure", reporter-confirmed details, a timeline (each medicine's start,
+  dose change and end, reaction onset, submission, status changes; missing dates are
+  listed, never estimated) and the status form.
 
 There is no coded "reaction category" in the data model, so the queue and overview use
 outcome, medical attention, reporter type and the reporter's symptom words instead.

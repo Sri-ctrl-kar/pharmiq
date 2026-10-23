@@ -1,7 +1,7 @@
 import type { ReportContent } from "./schema";
 
 export type MissingItem = {
-  /** Field path, e.g. `suspectedMedicines.0.dose`. Stored with the report. */
+  /** Field path, e.g. `medicines.0.dose`. Stored with the report. */
   field: string;
   label: string;
 };
@@ -9,7 +9,8 @@ export type MissingItem = {
 /**
  * Lists clinically useful details the reporter did not provide or marked as not known.
  * Reports with gaps are still valid; this only tells the reporter and reviewers what is
- * absent. Nothing here guesses or fills in a value.
+ * absent. Nothing here guesses or fills in a value. Optional product details
+ * (manufacturer, batch, expiry) are not listed: most reporters will not have them.
  */
 export function findMissingInformation(report: ReportContent): MissingItem[] {
   const missing: MissingItem[] = [];
@@ -20,10 +21,17 @@ export function findMissingInformation(report: ReportContent): MissingItem[] {
     add("patient.sex", "Patient sex");
   }
 
-  const several = report.suspectedMedicines.length > 1;
-  report.suspectedMedicines.forEach((medicine, index) => {
+  if (report.suspectedSelection === "not_sure") {
+    add(
+      "suspectedSelection",
+      "Which medicine is suspected (reporter not sure)",
+    );
+  }
+
+  const several = report.medicines.length > 1;
+  report.medicines.forEach((medicine, index) => {
     const prefix = several ? `${medicine.name}: ` : "";
-    const path = `suspectedMedicines.${index}`;
+    const path = `medicines.${index}`;
     if (medicine.dose === null) add(`${path}.dose`, `${prefix}Dose`);
     if (medicine.route === null || medicine.route === "unknown") {
       add(`${path}.route`, `${prefix}How the medicine was taken`);
@@ -32,6 +40,16 @@ export function findMissingInformation(report: ReportContent): MissingItem[] {
       add(`${path}.frequency`, `${prefix}How often it was taken`);
     if (medicine.startDate === null)
       add(`${path}.startDate`, `${prefix}Date the medicine was started`);
+    if (
+      medicine.courseStatus === "dose_changed" &&
+      medicine.previousDose === null &&
+      medicine.previousFrequency === null
+    ) {
+      add(
+        `${path}.previousDose`,
+        `${prefix}Dose or frequency before the change`,
+      );
+    }
   });
 
   if (report.reaction.onsetDate === null) {

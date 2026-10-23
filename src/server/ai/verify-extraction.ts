@@ -7,7 +7,7 @@ import {
   type VerifiedMedicine,
   type WireField,
 } from "@/lib/ai/extraction-schema";
-import { MAX_SUSPECTED_MEDICINES, MAX_SYMPTOMS } from "@/lib/reports/constants";
+import { MAX_MEDICINES, MAX_SYMPTOMS } from "@/lib/reports/constants";
 import { isNotFutureDate, isRealCalendarDate } from "@/lib/reports/schema";
 import {
   checkDateAgainstQuote,
@@ -86,7 +86,14 @@ const clean = (text: string | null) => {
 };
 
 type FieldKind =
-  "text" | "symptom" | "date" | "time" | "route" | "outcome" | "attention";
+  | "text"
+  | "symptom"
+  | "date"
+  | "time"
+  | "route"
+  | "course"
+  | "outcome"
+  | "attention";
 type AnyWireField = Omit<WireField, "value"> & { value: string | null };
 
 export type VerifyResult =
@@ -316,6 +323,7 @@ export function verifyExtraction(
           }
           break;
         case "route":
+        case "course":
           break;
       }
     }
@@ -353,6 +361,11 @@ export function verifyExtraction(
         route: verifyField(medicine.route, "route"),
         frequency: verifyField(medicine.frequency, "text"),
         startDate: verifyField(medicine.start_date, "date"),
+        endDate: verifyField(medicine.end_date, "date"),
+        courseStatus: verifyField(medicine.course_status, "course"),
+        previousDose: verifyField(medicine.previous_dose, "text"),
+        previousFrequency: verifyField(medicine.previous_frequency, "text"),
+        changeDate: verifyField(medicine.change_date, "date"),
         reporterRole:
           medicine.reporter_role === "unclear" || roleSupported
             ? medicine.reporter_role
@@ -365,11 +378,11 @@ export function verifyExtraction(
   if (medicines.length < wire.medicines.length) {
     warnings.push("A medicine without a name was ignored.");
   }
-  if (medicines.length > MAX_SUSPECTED_MEDICINES) {
+  if (medicines.length > MAX_MEDICINES) {
     warnings.push(
-      `More than ${MAX_SUSPECTED_MEDICINES} medicines were mentioned; only the first ${MAX_SUSPECTED_MEDICINES} are shown. Add others under “Other information”.`,
+      `More than ${MAX_MEDICINES} medicines were mentioned; only the first ${MAX_MEDICINES} are shown. Add any others yourself.`,
     );
-    medicines = medicines.slice(0, MAX_SUSPECTED_MEDICINES);
+    medicines = medicines.slice(0, MAX_MEDICINES);
   }
 
   const seenNames = new Set<string>();
@@ -409,6 +422,11 @@ export function verifyExtraction(
       medicine.route,
       medicine.frequency,
       medicine.startDate,
+      medicine.endDate,
+      medicine.courseStatus,
+      medicine.previousDose,
+      medicine.previousFrequency,
+      medicine.changeDate,
     ]) {
       if (
         detail.value !== null &&
@@ -420,6 +438,25 @@ export function verifyExtraction(
           detail,
           "not_linked_to_medicine",
           "This detail is not clearly linked to this medicine in your text.",
+        );
+      }
+    }
+  }
+
+  // A change of dose or frequency is easy to misread (which value is "before", which
+  // medicine changed), so every course detail needs the reporter's own check.
+  for (const medicine of medicines) {
+    for (const detail of [
+      medicine.courseStatus,
+      medicine.previousDose,
+      medicine.previousFrequency,
+      medicine.changeDate,
+    ]) {
+      if (detail.value !== null) {
+        addFlag(
+          detail,
+          "confirm_course_change",
+          "Changes to a medicine course are easy to misread: confirm this yourself.",
         );
       }
     }
@@ -453,7 +490,14 @@ export function verifyExtraction(
 
   // Omission check: dates the reporter wrote that no suggestion uses.
   const usedDates = new Set(
-    [onsetDate, ...medicines.map((medicine) => medicine.startDate)]
+    [
+      onsetDate,
+      ...medicines.flatMap((medicine) => [
+        medicine.startDate,
+        medicine.endDate,
+        medicine.changeDate,
+      ]),
+    ]
       .map((field) => field.value)
       .filter((value): value is string => value !== null),
   );
@@ -473,6 +517,27 @@ export function verifyExtraction(
     field.value !== null && isRealCalendarDate(field.value)
       ? field.value
       : null;
+  for (const medicine of medicines) {
+    const started = validDate(medicine.startDate);
+    const ended = validDate(medicine.endDate);
+    const changed = validDate(medicine.changeDate);
+    if (started && ended && ended < started) {
+      const message = "This medicine's end date is before its start date.";
+      addFlag(medicine.startDate, "conflicting_dates", message);
+      addFlag(medicine.endDate, "conflicting_dates", message);
+    }
+    if (
+      changed &&
+      ((started && changed < started) || (ended && changed > ended))
+    ) {
+      addFlag(
+        medicine.changeDate,
+        "conflicting_dates",
+        "The change date is outside this medicine's start and end dates.",
+      );
+    }
+  }
+
   const onset = validDate(onsetDate);
   if (onset) {
     for (const medicine of medicines) {

@@ -256,8 +256,11 @@ async function Overview() {
                     Most frequently named suspected medicines
                   </CardTitle>
                   <CardDescription>
-                    Number of reports naming each medicine as suspected — not
-                    evidence of cause
+                    Reports in which the reporter marked each medicine as
+                    suspected — not evidence of cause. {metrics.medicineEntries}{" "}
+                    medicine entries across {metrics.total} reports;{" "}
+                    {metrics.reportsNotSure} report
+                    {metrics.reportsNotSure === 1 ? "" : "s"} marked “Not sure”.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>

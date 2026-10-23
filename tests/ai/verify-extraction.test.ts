@@ -538,8 +538,20 @@ describe("malformed AI output", () => {
 });
 
 describe("limits and housekeeping", () => {
-  it("drops nameless medicines and caps the list at five with a warning", () => {
-    const names = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot"];
+  it("drops nameless medicines and caps the list at ten with a warning", () => {
+    const names = [
+      "alpha",
+      "bravo",
+      "charlie",
+      "delta",
+      "echo",
+      "foxtrot",
+      "golf",
+      "hotel",
+      "india",
+      "juliett",
+      "kilo",
+    ];
     const source = `Took ${names.join(", ")} last week.`;
     const result = verified(
       simulatedOutput({
@@ -551,7 +563,7 @@ describe("limits and housekeeping", () => {
       source,
     );
     expect(result.medicines.map((m) => m.name.value)).toEqual(
-      names.slice(0, 5),
+      names.slice(0, 10),
     );
     expect(result.warnings).toHaveLength(2);
   });

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   medicalAttentionOptions,
+  medicineCourseStatuses,
   medicineRoutes,
   reactionOutcomes,
 } from "@/lib/reports/constants";
@@ -38,6 +39,12 @@ const wireMedicine = z.strictObject({
   route: wireField(z.enum(medicineRoutes.values)),
   frequency: wireField(z.string()),
   start_date: wireField(z.string()),
+  // Milestone 6: each medicine's own timeline, only as the reporter states it.
+  end_date: wireField(z.string()),
+  course_status: wireField(z.enum(medicineCourseStatuses.values)),
+  previous_dose: wireField(z.string()),
+  previous_frequency: wireField(z.string()),
+  change_date: wireField(z.string()),
   reporter_role: z.enum(reporterRoles),
   reporter_role_evidence: z.string().nullable(),
 });
@@ -97,7 +104,9 @@ export type ReviewFlagCode =
   | "confirm_outcome"
   // Added in the verification review:
   | "multiple_dates_in_quote"
-  | "imprecise_date";
+  | "imprecise_date"
+  // Added in Milestone 6 (medicine timelines):
+  | "confirm_course_change";
 
 export type ReviewFlag = { code: ReviewFlagCode; message: string };
 
@@ -119,6 +128,12 @@ export type VerifiedMedicine = {
   route: VerifiedField;
   frequency: VerifiedField;
   startDate: VerifiedField;
+  endDate: VerifiedField;
+  /** Always needs review when present: course changes are easy to misread. */
+  courseStatus: VerifiedField;
+  previousDose: VerifiedField;
+  previousFrequency: VerifiedField;
+  changeDate: VerifiedField;
   /** Only what the reporter said; never the model's own causality judgement. */
   reporterRole: ReporterRole;
   reporterRoleEvidence: string | null;

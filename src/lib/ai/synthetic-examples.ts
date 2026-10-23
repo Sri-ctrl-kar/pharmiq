@@ -24,6 +24,10 @@ export type ExpectedMedicine = {
   route?: ExpectedField;
   frequency?: ExpectedField;
   startDate?: ExpectedField;
+  endDate?: ExpectedField;
+  courseStatus?: ExpectedField;
+  previousDose?: ExpectedField;
+  changeDate?: ExpectedField;
 };
 
 export type SyntheticExtractionCase = {
@@ -235,6 +239,41 @@ export const syntheticExtractionCases: SyntheticExtractionCase[] = [
       onsetDate: { status: ["reported", "ambiguous"], value: "2026-09-20" },
       outcome: { status: "reported", value: "recovered" },
       medicalAttention: { status: "missing" },
+    },
+  },
+  {
+    id: "dose-change-two-medicines",
+    title: "Two medicines, one dose change, one stopped",
+    description:
+      "My father has taken amlodipine 5 mg once daily for years and is still taking it. On 1 October 2026 his doctor increased his atorvastatin from 10 mg to 20 mg at night. On 8 October 2026 he got pain in both thighs. He stopped the atorvastatin on 10 October 2026 after seeing the doctor. He is recovering.",
+    expected: {
+      medicines: [
+        {
+          name: "amlodipine",
+          dose: { status: "reported", value: "5 mg" },
+          frequency: { status: "reported", value: "once daily" },
+          startDate: { status: missingOrAmbiguous },
+          courseStatus: {
+            status: ["reported", "ambiguous"],
+            value: "currently_taking",
+          },
+        },
+        {
+          name: "atorvastatin",
+          dose: { status: ["reported", "ambiguous"], value: "20 mg" },
+          previousDose: { status: ["reported", "ambiguous"], value: "10 mg" },
+          changeDate: {
+            status: ["reported", "ambiguous"],
+            value: "2026-10-01",
+          },
+          endDate: { status: ["reported", "ambiguous"], value: "2026-10-10" },
+        },
+      ],
+      symptoms: ["pain in both thighs"],
+      onsetDate: { status: "reported", value: "2026-10-08" },
+      outcome: { status: "reported", value: "recovering" },
+      medicalAttention: { status: ["reported", "ambiguous"] },
+      flags: ["confirm_course_change"],
     },
   },
 ];

@@ -51,15 +51,22 @@ describe("SupabaseReportRepository", () => {
       reporter_type: "patient",
       patient_age_years: 34,
       reaction_onset_time: "09:15",
-      suspected_medicines: [
+      suspected_selection: "marked",
+      medicines: [
         {
           name: "Amoxicillin",
           dose: "500 mg",
           route: "oral",
           start_date: "2026-08-28",
+          end_date: null,
+          course_status: null,
+          batch_number: null,
+          expiry_month: null,
+          is_suspected: true,
         },
       ],
     });
+    expect(p_report).not.toHaveProperty("suspected_medicines");
     // Status, synthetic flag and timestamps are decided by the database, not the caller.
     expect(p_report).not.toHaveProperty("status");
     expect(p_report).not.toHaveProperty("is_synthetic");

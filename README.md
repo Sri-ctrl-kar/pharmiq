@@ -19,14 +19,25 @@ schema and milestone plan.
 | M3 AI-assisted extraction (optional, user-confirmed)  | Done — see [`docs/AI_EXTRACTION.md`](docs/AI_EXTRACTION.md) |
 | M4 Reviewer workflow and reviewer analytics           | Done — see [`docs/REVIEWER.md`](docs/REVIEWER.md)           |
 | M5 Public synthetic analytics (`/dashboard`)          | Done — see [`docs/ANALYTICS.md`](docs/ANALYTICS.md)         |
+| M6 Multiple medicines per report, demo hardening      | Done — see “Medicines in a report” below                    |
 
 **Working now, with no credentials:** the `/report` form (reporter, what happened,
-suspected medicines, reaction details incl. symptoms, other information, review),
+medicines, reaction details incl. symptoms, other information, review),
 client- and server-side validation, missing-information checks, report IDs
 (`ADR-2026-XXXXXX`), duplicate-submission protection, saving to the **local
 demonstration store**, 10 synthetic example descriptions, and the public
 **`/dashboard`** (aggregate counts from a fixed synthetic dataset; reports submitted through
 the form are never included).
+
+**Medicines in a report:** each report lists 1–10 medicines, each with its own name,
+brand, strength, dose, frequency, route, start and end dates, status (still taking,
+finished, stopped, or dose/frequency changed — with the previous dose/frequency and an
+approximate change date), and optional manufacturer, batch/lot, expiry and how those were
+checked. Only the name is required; blank means "not provided". The reporter ticks the
+medicine(s) they suspect or chooses "Not sure" — nothing is marked automatically, and a
+mark is the reporter's suspicion, not a causality assessment. Patients, caregivers and
+healthcare professionals (including pharmacists) use the same form. However many
+medicines it lists, a report counts once in every report-level figure.
 
 **Reviewer area (`/reviewer`):** locked until reviewer access is configured — a role
 selector is not authentication. With the local demo store, set
@@ -57,7 +68,10 @@ The storage backend is chosen at request time (`GET /api/health` shows which):
 1. Create a Supabase project.
 2. Apply the migrations in order (`supabase/migrations/*.sql`): run each in the SQL
    editor, or `supabase link` then `supabase db push`.
-3. Optionally load the synthetic demo records: `supabase/seed.sql`.
+3. Optionally load the synthetic demo records: `supabase/seed.sql` (after all migrations).
+   **Upgrading an existing project:** apply `20261026000000_medicine_entries.sql`. It is
+   additive: earlier reports keep their medicines, marked as suspected (that is all the
+   earlier form recorded), and the new details are empty.
 4. Set these in `.env.local` (or your host's environment), from Project settings → API:
    `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
    The service-role key is server-only; never prefix it with `NEXT_PUBLIC_`.

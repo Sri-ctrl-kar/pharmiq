@@ -3,6 +3,7 @@ import {
   reactionOutcomes,
   type ReportStatus,
 } from "@/lib/reports/constants";
+import { suspectedMedicinesOf } from "@/lib/reports/medicines";
 import { hasReportedSeriousEvent, istDate } from "./query";
 import type { ReviewReport } from "./types";
 
@@ -30,6 +31,10 @@ export type ReviewMetrics = {
   perMonth: CountItem[];
   byOutcome: CountItem[];
   byMedicalAttention: CountItem[];
+  /** Medicine entries across these reports (a report can list up to 10). */
+  medicineEntries: number;
+  /** Reports where the reporter was not sure which medicine to suspect. */
+  reportsNotSure: number;
   topSuspectedMedicines: CountItem[];
   topSymptoms: CountItem[];
   /** Median days from submission to first being marked reviewed; null if none. */
@@ -158,9 +163,17 @@ export function computeReviewMetrics(
       label: medicalAttentionOptions.labels[key],
       count: attentionCounts.get(key) ?? 0,
     })),
+    medicineEntries: reports.reduce(
+      (sum, r) => sum + r.content.medicines.length,
+      0,
+    ),
+    reportsNotSure: reports.filter(
+      (r) => r.content.suspectedSelection === "not_sure",
+    ).length,
+    // Only medicines the reporter marked as suspected.
     topSuspectedMedicines: topValues(
       reports,
-      (r) => r.content.suspectedMedicines.map((m) => m.name),
+      (r) => suspectedMedicinesOf(r.content).map((m) => m.name),
       8,
     ),
     topSymptoms: topValues(reports, (r) => r.content.reaction.symptoms, 8),

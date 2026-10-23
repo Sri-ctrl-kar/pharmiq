@@ -50,7 +50,7 @@ describe("submitReport", () => {
     expect(stored.reportId).toBe(result.reportId);
     expect(stored.status).toBe("submitted");
     expect(stored.isSynthetic).toBe(false);
-    expect(stored.content.suspectedMedicines[0].name).toBe("Amoxicillin");
+    expect(stored.content.medicines[0].name).toBe("Amoxicillin");
   });
 
   it("stores reports with missing information and records which fields are missing", async () => {

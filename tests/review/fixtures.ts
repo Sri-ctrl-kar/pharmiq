@@ -1,3 +1,4 @@
+import { toMedicineEntry } from "@/lib/reports/medicines";
 import type { ReviewReport } from "@/lib/review/types";
 
 /** SYNTHETIC reviewer-side report for tests. Not real patient data. */
@@ -22,13 +23,15 @@ export function reviewReport(
     content: {
       reporterType: reporterType ?? "patient",
       patient: { initials: null, ageYears: 40, sex: "female", state: "Kerala" },
-      suspectedMedicines: (medicines ?? ["Amoxicillin"]).map((name) => ({
-        name,
-        dose: "500 mg",
-        route: "oral",
-        frequency: null,
-        startDate: null,
-      })),
+      medicines: (medicines ?? ["Amoxicillin"]).map((name) =>
+        toMedicineEntry({
+          name,
+          dose: "500 mg",
+          route: "oral",
+          suspected: true,
+        }),
+      ),
+      suspectedSelection: "marked",
       reaction: {
         description:
           "[Synthetic test record] Itchy rash while taking the medicine.",

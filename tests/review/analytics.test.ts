@@ -5,6 +5,7 @@ import {
   computeWorkload,
 } from "@/lib/review/analytics";
 import { generateSyntheticReports } from "@/server/reports/demo-seed";
+import { toMedicineEntry } from "@/lib/reports/medicines";
 import { reviewReport } from "./fixtures";
 
 const NOW = new Date("2026-10-23T06:00:00Z");
@@ -172,15 +173,10 @@ describe("analytics scope (synthetic data only)", () => {
         sex: "male",
         state: "Ladakh",
       },
-      suspectedMedicines: [
-        {
-          name: "Zzmarkermedicine",
-          dose: null,
-          route: null,
-          frequency: null,
-          startDate: null,
-        },
+      medicines: [
+        toMedicineEntry({ name: "Zzmarkermedicine", suspected: true }),
       ],
+      suspectedSelection: "marked",
       reaction: {
         description: "ZZMARKER description text",
         onsetDate: null,
