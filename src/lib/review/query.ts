@@ -3,6 +3,8 @@ import {
   medicalAttentionOptions,
   reactionOutcomes,
   reporterTypes,
+  type MedicalAttention,
+  type ReactionOutcome,
   type ReportStatus,
 } from "@/lib/reports/constants";
 import type { ReviewReport } from "./types";
@@ -83,13 +85,20 @@ export function istDate(timestamp: string): string {
 }
 
 /** Reported (not assessed) serious events: death, admission or emergency visit. */
-export function hasReportedSeriousEvent(report: ReviewReport): boolean {
-  const { outcome, medicalAttention } = report.content.reaction;
+export function isReportedSeriousEvent(
+  outcome: ReactionOutcome,
+  medicalAttention: MedicalAttention,
+): boolean {
   return (
     outcome === "fatal" ||
     medicalAttention === "hospitalised" ||
     medicalAttention === "emergency_department"
   );
+}
+
+export function hasReportedSeriousEvent(report: ReviewReport): boolean {
+  const { outcome, medicalAttention } = report.content.reaction;
+  return isReportedSeriousEvent(outcome, medicalAttention);
 }
 
 const statusOrder: Record<ReportStatus, number> = {

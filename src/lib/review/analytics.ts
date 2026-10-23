@@ -11,7 +11,13 @@ import type { ReviewReport } from "./types";
  * incidence rates and say nothing about whether a medicine caused a reaction.
  */
 
-export type CountItem = { key: string; label: string; count: number };
+export type CountItem = {
+  key: string;
+  label: string;
+  count: number;
+  /** Compact axis label for column charts; defaults to the first word of `label`. */
+  shortLabel?: string;
+};
 
 export type ReviewMetrics = {
   total: number;
@@ -46,9 +52,9 @@ function recentMonths(now: Date, count: number): string[] {
 }
 
 /** Count distinct normalised values, one per report, keeping the most common spelling. */
-function topValues(
-  reports: ReviewReport[],
-  valuesOf: (report: ReviewReport) => string[],
+export function topValues<T>(
+  reports: T[],
+  valuesOf: (report: T) => string[],
   limit: number,
 ): CountItem[] {
   const counts = new Map<

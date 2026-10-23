@@ -18,13 +18,15 @@ schema and milestone plan.
 | M2 Reporting form and data layer                      | Done                                                        |
 | M3 AI-assisted extraction (optional, user-confirmed)  | Done — see [`docs/AI_EXTRACTION.md`](docs/AI_EXTRACTION.md) |
 | M4 Reviewer workflow and reviewer analytics           | Done — see [`docs/REVIEWER.md`](docs/REVIEWER.md)           |
-| M5 Public synthetic analytics (`/dashboard`)          | Not started (placeholder page)                              |
+| M5 Public synthetic analytics (`/dashboard`)          | Done — see [`docs/ANALYTICS.md`](docs/ANALYTICS.md)         |
 
 **Working now, with no credentials:** the `/report` form (reporter, what happened,
 suspected medicines, reaction details incl. symptoms, other information, review),
 client- and server-side validation, missing-information checks, report IDs
 (`ADR-2026-XXXXXX`), duplicate-submission protection, saving to the **local
-demonstration store**, and 10 synthetic example descriptions.
+demonstration store**, 10 synthetic example descriptions, and the public
+**`/dashboard`** (aggregate counts from a fixed synthetic dataset; reports submitted through
+the form are never included).
 
 **Reviewer area (`/reviewer`):** locked until reviewer access is configured — a role
 selector is not authentication. With the local demo store, set
@@ -88,7 +90,7 @@ npm run dev                  # http://localhost:3000
 | `npm run format`              | Prettier                  |
 
 Useful routes: `/report` (reporting form), `/reviewer` (reviewer overview and queue;
-needs reviewer access), `/design-system` (living style guide),
+needs reviewer access), `/dashboard` (public synthetic analytics), `/design-system` (living style guide),
 `/api/health` (storage mode and which integrations are configured — never values),
 `/api/extract` (AI suggestions; server-side only).
 

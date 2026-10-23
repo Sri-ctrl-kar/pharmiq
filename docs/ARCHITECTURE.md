@@ -12,7 +12,7 @@
 | Never advise stopping/changing medication | Fixed safety notice on every reporting step; AI system prompt forbids advice; output is validated against a strict Zod schema so free-form advice text is dropped.                                                                                  |
 | Never invent clinical information         | AI must return `null` for anything not stated, plus a verbatim `evidence` quote per extracted item. Extracted values are _suggestions_ the reporter must confirm; nothing is saved unconfirmed.                                                     |
 | Protect personal/medical data             | Supabase Row Level Security on every table; reporter identity stored separately from clinical content; minimal PII (initials, age band, sex, state); service-role key used server-side only; AI calls send the narrative only, not contact details. |
-| Synthetic data for the demo               | Analytics reads from a `synthetic_reports` view / `is_synthetic` flag; every chart is labelled "Synthetic demonstration data".                                                                                                                      |
+| Synthetic data for the demo               | The public dashboard reads a fixed, versioned synthetic dataset and never report storage; the reviewer overview charts only `is_synthetic` records. Every chart is labelled "Synthetic demonstration data". See `docs/ANALYTICS.md`.                |
 | Secrets in env vars                       | Validated by `src/lib/env.ts`; `.env*` is git-ignored; `.env.example` documents names only.                                                                                                                                                         |
 
 ## 2. System architecture
@@ -69,11 +69,11 @@ apply the real migration and verify RLS and `submit_report`.
 
 Added in later milestones (not yet installed):
 
-| Package              | Milestone | Purpose                      |
-| -------------------- | --------- | ---------------------------- |
-| `recharts`           | M5        | Dashboard charts             |
-| `@playwright/test`   | M6        | End-to-end tests in CI       |
-| `supabase` CLI (dev) | M4        | Local stack, type generation |
+| Package              | Milestone | Purpose                                                          |
+| -------------------- | --------- | ---------------------------------------------------------------- |
+| ~~`recharts`~~       | M5        | Not needed: charts are server-rendered HTML with table fallbacks |
+| `@playwright/test`   | M6        | End-to-end tests in CI                                           |
+| `supabase` CLI (dev) | M4        | Local stack, type generation                                     |
 
 ## 4. File structure
 
@@ -87,22 +87,24 @@ Added in later milestones (not yet installed):
 │   ├── app/
 │   │   ├── report/               ← guided reporting flow + server action (M2)
 │   │   │   └── _components/      ← steps, review, confirmation
-│   │   ├── dashboard/            ← synthetic analytics (M5)
+│   │   ├── dashboard/            ← public synthetic analytics dashboard (M5)
 │   │   ├── reviewer/             ← reviewer overview, queue, report detail, sign-in, actions (M4)
 │   │   ├── design-system/        ← living style guide
 │   │   ├── api/health/route.ts   ← config + storage mode (no values)
 │   │   └── api/extract/route.ts  ← AI suggestions (M3)
-│   ├── components/{ui,layout,safety}/
+│   ├── components/{ui,layout,safety,charts}/
 │   ├── lib/
 │   │   ├── reports/              ← shared: constants, Zod schema, missing info, report ID, privacy
 │   │   ├── ai/                   ← extraction contract, apply rules, synthetic examples
 │   │   ├── review/               ← status transitions, queue filters/sort, analytics, timeline
+│   │   ├── analytics/            ← public analytics: de-identified projection, filters, buckets
 │   │   ├── env-schema.ts, site.ts, utils.ts
 │   └── server/                   ← server-only
 │       ├── env.ts
 │       ├── reports/              ← repository contract, local demo + Supabase adapters, submit service
 │       ├── auth/                 ← reviewer auth mode, demo session cookie, access resolution
 │       ├── review/               ← review repository contract, Supabase adapter, action handlers
+│       ├── analytics/            ← the public synthetic dataset (never reads report storage)
 │       └── ai/                   ← prompt, Claude provider, verifier, rate limit, service
 ├── evals/extraction/             ← live eval runner + scorer (needs API key)
 └── tests/                        ← vitest unit + Postgres (PGlite) tests
@@ -183,5 +185,5 @@ There is still no `report_reviews` (causality opinion) or general `audit_log` ta
 | **M2** | Reporting form and data layer | Done. Multi-step form with review, shared Zod validation, missing-information checks, report IDs, idempotent submission, local demo store, Supabase migration + RLS + RPC tested against Postgres.                                                                                                                                                                             |
 | **M3** | AI-assisted extraction        | Done. `/api/extract` with Claude structured output, evidence quotes, deterministic verifier, data minimisation, rate limits, accept/edit/reject each suggestion, manual fallback. AI output is not stored (only `ai_assisted`). See `docs/AI_EXTRACTION.md`.                                                                                                                   |
 | **M4** | Reviewer workflow             | Done. Server-side reviewer authorisation (Supabase Auth + `profiles.role`, or a signed shared-code demo session with local demo storage only), review workload counts plus synthetic-only analytics, filterable queue, report detail with timeline, status transitions with notes and history. Causality opinion and a general audit log are deferred. See `docs/REVIEWER.md`. |
-| M5     | Synthetic analytics           | Aggregate RPCs over `is_synthetic` rows only, dashboard with persistent "Synthetic data" labelling.                                                                                                                                                                                                                                                                            |
+| **M5** | Synthetic analytics           | Done. Public `/dashboard` over a fixed, versioned synthetic dataset (300 records) reduced to de-identified fields; filters, weekly/monthly trends, medicine and reaction-term counts, breakdowns, labelled limitations. Deviation from the plan: no aggregate RPCs over `is_synthetic` rows — the dashboard does not read report storage at all. See `docs/ANALYTICS.md`.      |
 | M6     | Hardening & demo polish       | Rate limiting, accessibility pass, Playwright E2E in CI, privacy review, deployment.                                                                                                                                                                                                                                                                                           |

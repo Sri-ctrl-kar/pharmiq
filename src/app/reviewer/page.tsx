@@ -22,7 +22,7 @@ import { reviewerStatusLabels, workflowStatuses } from "@/lib/review/status";
 import { safetyCopy } from "@/lib/site";
 import { getReviewerAccess } from "@/server/auth/reviewer-session";
 import { AccessGate } from "./_components/access-gate";
-import { ColumnChart, CountBars } from "./_components/charts";
+import { ColumnChart, CountBars } from "@/components/charts/count-charts";
 import { ReviewerShell } from "./_components/reviewer-shell";
 import { ReviewerSkeleton } from "./_components/skeleton";
 

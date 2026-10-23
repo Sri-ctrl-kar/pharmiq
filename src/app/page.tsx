@@ -36,7 +36,7 @@ const features = [
     icon: BarChart3,
     title: "Aggregate analytics",
     description:
-      "Trend dashboards for professionals. This demonstration uses clearly labelled synthetic data.",
+      "A public trend dashboard of aggregate counts. This demonstration uses clearly labelled synthetic data only.",
   },
 ];
 
