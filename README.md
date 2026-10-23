@@ -12,21 +12,26 @@ schema and milestone plan.
 
 ## Status
 
-| Milestone                                              | State                           |
-| ------------------------------------------------------ | ------------------------------- |
-| M1 Foundation — app shell, design system, safety copy  | Done                            |
-| M2 Reporting form and data layer                       | Done (see below)                |
-| M3 AI extraction · M4 Reviewer workflow · M5 Analytics | Not started (placeholder pages) |
+| Milestone                                             | State                                                       |
+| ----------------------------------------------------- | ----------------------------------------------------------- |
+| M1 Foundation — app shell, design system, safety copy | Done                                                        |
+| M2 Reporting form and data layer                      | Done                                                        |
+| M3 AI-assisted extraction (optional, user-confirmed)  | Done — see [`docs/AI_EXTRACTION.md`](docs/AI_EXTRACTION.md) |
+| M4 Reviewer workflow · M5 Analytics                   | Not started (placeholder pages)                             |
 
-**Working now, with no credentials:** the `/report` multi-step form (reporter, suspected
-medicines, reaction, other information, review), validation on the client and again on the
-server, missing-information checks, report IDs (`ADR-2026-XXXXXX`), duplicate-submission
-protection, and saving to the **local demonstration store**.
+**Working now, with no credentials:** the `/report` form (reporter, what happened,
+suspected medicines, reaction details incl. symptoms, other information, review),
+client- and server-side validation, missing-information checks, report IDs
+(`ADR-2026-XXXXXX`), duplicate-submission protection, saving to the **local
+demonstration store**, and 10 synthetic example descriptions.
 
-**Needs credentials:** persistent production storage in Supabase (below). The SQL
-migration, RLS policies and `submit_report` function are tested in this repo against a real
-Postgres engine (PGlite) with Supabase's `auth` objects stubbed. They have **not** yet been
-run against a live Supabase project.
+**Needs credentials:**
+
+- _Persistent production storage_ — Supabase (below). Migrations and RLS are tested
+  against a real Postgres engine (PGlite) but not yet against a live Supabase project.
+- _AI-assisted extraction_ — `ANTHROPIC_API_KEY`. Without it the form shows "AI
+  assistance is not available" and works manually. Guardrails are tested with simulated
+  model outputs; **live model accuracy has not been measured** (`npm run eval:extraction`).
 
 ## Report storage
 
@@ -41,7 +46,7 @@ The storage backend is chosen at request time (`GET /api/health` shows which):
 ### Enabling persistent Supabase storage
 
 1. Create a Supabase project.
-2. Apply the migration: run `supabase/migrations/20261023000000_reports.sql` in the SQL
+2. Apply the migrations in order (`supabase/migrations/*.sql`): run each in the SQL
    editor, or `supabase link` then `supabase db push`.
 3. Optionally load the synthetic demo records: `supabase/seed.sql`.
 4. Set these in `.env.local` (or your host's environment), from Project settings → API:
@@ -74,9 +79,10 @@ npm run dev                  # http://localhost:3000
 | `npm run format`              | Prettier                  |
 
 Useful routes: `/report` (reporting form), `/design-system` (living style guide),
-`/api/health` (storage mode and which integrations are configured — never values).
+`/api/health` (storage mode and which integrations are configured — never values),
+`/api/extract` (AI suggestions; server-side only).
 
 ## Tech stack
 
 Next.js 16 (App Router, Cache Components) · React 19 · TypeScript · Tailwind CSS v4 ·
-Supabase (Postgres + Auth) · Claude API (optional) · Zod · Vitest · PGlite (tests).
+Supabase (Postgres + Auth) · Claude API via `@anthropic-ai/sdk` (optional) · Zod · Vitest · PGlite (tests).

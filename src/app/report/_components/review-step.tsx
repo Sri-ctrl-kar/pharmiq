@@ -124,9 +124,26 @@ export function ReportSummary({
         ))}
       </Section>
 
-      <Section title="The reaction" step="reaction" onEdit={onEdit}>
-        <Row label="What happened">
+      <Section title="What happened" step="describe" onEdit={onEdit}>
+        <Row label="Description (your words)">
           <Value value={reaction.description} />
+        </Row>
+        <Row label="AI assistance">
+          {report.aiAssisted ? (
+            <span>Used — you checked and confirmed the suggested details</span>
+          ) : (
+            <span className="text-muted italic">Not used</span>
+          )}
+        </Row>
+      </Section>
+
+      <Section title="Reaction details" step="reaction" onEdit={onEdit}>
+        <Row label="Main symptoms">
+          <Value
+            value={
+              reaction.symptoms.length ? reaction.symptoms.join(", ") : null
+            }
+          />
         </Row>
         <Row label="Date started">
           <Value value={reaction.onsetDate} />

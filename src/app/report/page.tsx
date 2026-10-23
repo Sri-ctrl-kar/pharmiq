@@ -12,6 +12,7 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { safetyCopy } from "@/lib/site";
+import { isAiExtractionConfigured } from "@/server/ai";
 import { getStorageStatus } from "@/server/reports/storage";
 import { ReportFormShell } from "./_components/report-form";
 
@@ -61,7 +62,10 @@ async function ReportFormWithStorage() {
           <p>{safetyCopy.localDemoStorage}</p>
         </div>
       ) : null}
-      <ReportFormShell storageMode={storage.mode} />
+      <ReportFormShell
+        storageMode={storage.mode}
+        aiAvailable={isAiExtractionConfigured()}
+      />
     </div>
   );
 }

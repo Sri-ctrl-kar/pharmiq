@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 import { reportSubmissionSchema, toReportContent } from "@/lib/reports/schema";
@@ -111,9 +111,12 @@ async function count(table: string) {
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(SUPABASE_STUBS);
-  await db.exec(
-    await readFile("supabase/migrations/20261023000000_reports.sql", "utf8"),
-  );
+  // Apply every migration in filename order, as `supabase db push` does.
+  const migrations = (await readdir("supabase/migrations")).sort();
+  expect(migrations.length).toBeGreaterThanOrEqual(2);
+  for (const file of migrations) {
+    await db.exec(await readFile(`supabase/migrations/${file}`, "utf8"));
+  }
   await db.exec(await readFile("supabase/seed.sql", "utf8"));
   await db.exec(`
     insert into auth.users values ('${REVIEWER_ID}'), ('${REPORTER_ID}');
@@ -302,5 +305,56 @@ describe("access control", () => {
       db.query("select * from public.report_medicines"),
     );
     expect(medicines.rows.length).toBeGreaterThan(0);
+  });
+});
+
+describe("symptoms and AI-assistance flag (migration 2)", () => {
+  const repository = () => new SupabaseReportRepository(rpcClient);
+
+  it("stores symptoms and the ai_assisted flag", async () => {
+    const input = record({ reportId: "ADR-2026-TEST20" });
+    input.content = {
+      ...input.content,
+      reaction: {
+        ...input.content.reaction,
+        symptoms: ["itchy rash", "swollen lips"],
+      },
+      aiAssisted: true,
+    };
+    await repository().create(input);
+    const { rows } = await db.query(
+      "select reaction_symptoms, ai_assisted from public.reports where public_id = 'ADR-2026-TEST20'",
+    );
+    expect(rows[0]).toEqual({
+      reaction_symptoms: ["itchy rash", "swollen lips"],
+      ai_assisted: true,
+    });
+  });
+
+  it("defaults to no symptoms and not AI-assisted for older payloads", async () => {
+    const {
+      reaction_symptoms: _s,
+      ai_assisted: _a,
+      ...legacy
+    } = toSubmitReportPayload(record({ reportId: "ADR-2026-TEST21" }));
+    await callRaw("service_role", legacy);
+    const { rows } = await db.query(
+      "select reaction_symptoms, ai_assisted from public.reports where public_id = 'ADR-2026-TEST21'",
+    );
+    expect(rows[0]).toEqual({ reaction_symptoms: [], ai_assisted: false });
+  });
+
+  it("rejects malformed symptom lists", async () => {
+    const base = toSubmitReportPayload(record({ reportId: "ADR-2026-TEST22" }));
+    for (const reaction_symptoms of [
+      Array.from({ length: 11 }, (_, i) => `symptom ${i}`),
+      ["x"],
+      ["y".repeat(101)],
+      [42],
+    ]) {
+      await expect(
+        callRaw("service_role", { ...base, reaction_symptoms }),
+      ).rejects.toThrow();
+    }
   });
 });

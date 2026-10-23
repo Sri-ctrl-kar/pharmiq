@@ -1,12 +1,16 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { FlaskConical, Plus, Trash2, X } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RadioCardGroup } from "@/components/ui/choice";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { syntheticExtractionCases } from "@/lib/ai/synthetic-examples";
 import {
   MAX_SUSPECTED_MEDICINES,
+  MAX_SYMPTOMS,
   indianStatesAndUts,
   medicalAttentionOptions,
   medicineRoutes,
@@ -322,14 +326,23 @@ export function MedicinesStep({
   );
 }
 
-type ReactionStepProps = {
+type ReactionTextField = Exclude<keyof ReportDraft["reaction"], "symptoms">;
+
+type DescribeStepProps = {
   draft: ReportDraft;
   errors: FieldErrors;
-  onReaction: (key: keyof ReportDraft["reaction"], value: string) => void;
+  onDescription: (value: string) => void;
+  /** Optional AI assistance, rendered under the description. */
+  children?: React.ReactNode;
 };
 
-export function ReactionStep({ draft, errors, onReaction }: ReactionStepProps) {
-  const { reaction } = draft;
+export function DescribeStep({
+  draft,
+  errors,
+  onDescription,
+  children,
+}: DescribeStepProps) {
+  const { description } = draft.reaction;
   return (
     <div className="flex flex-col gap-5">
       <Field
@@ -338,9 +351,10 @@ export function ReactionStep({ draft, errors, onReaction }: ReactionStepProps) {
         required
         hint={
           <>
-            Describe the symptoms in your own words: what you noticed, when, and
-            how it changed. Do not include names, phone numbers or addresses.{" "}
-            <span aria-live="polite">{reaction.description.length}/4000</span>
+            Describe it in your own words: which medicine(s), what you noticed,
+            when it started and how it is now. Do not include names, phone
+            numbers or addresses.{" "}
+            <span aria-live="polite">{description.length}/4000</span>
           </>
         }
         error={errors["reaction.description"]}
@@ -348,13 +362,79 @@ export function ReactionStep({ draft, errors, onReaction }: ReactionStepProps) {
         {(props) => (
           <Textarea
             {...props}
-            rows={6}
+            rows={7}
             maxLength={4000}
-            value={reaction.description}
-            onChange={(event) => onReaction("description", event.target.value)}
+            value={description}
+            onChange={(event) => onDescription(event.target.value)}
           />
         )}
       </Field>
+      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+        <label
+          htmlFor="synthetic-example"
+          className="text-xs font-medium text-muted"
+        >
+          <Badge tone="synthetic" className="mr-2">
+            <FlaskConical aria-hidden="true" />
+            Synthetic
+          </Badge>
+          Load a made-up example (for testing)
+        </label>
+        <Select
+          id="synthetic-example"
+          className="sm:max-w-xs"
+          value=""
+          disabled={description.trim() !== ""}
+          onChange={(event) => {
+            const example = syntheticExtractionCases.find(
+              (c) => c.id === event.target.value,
+            );
+            if (example) onDescription(example.description);
+          }}
+        >
+          <option value="">
+            {description.trim()
+              ? "Clear the description to load one"
+              : "Choose an example…"}
+          </option>
+          {syntheticExtractionCases.map((example) => (
+            <option key={example.id} value={example.id}>
+              {example.title}
+            </option>
+          ))}
+        </Select>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+type ReactionStepProps = {
+  draft: ReportDraft;
+  errors: FieldErrors;
+  onReaction: (key: ReactionTextField, value: string) => void;
+  onSymptoms: (symptoms: string[]) => void;
+};
+
+export function ReactionStep({
+  draft,
+  errors,
+  onReaction,
+  onSymptoms,
+}: ReactionStepProps) {
+  const { reaction } = draft;
+  return (
+    <div className="flex flex-col gap-5">
+      <SymptomsEditor
+        symptoms={reaction.symptoms}
+        error={
+          errors["reaction.symptoms"] ??
+          Object.entries(errors).find(([key]) =>
+            key.startsWith("reaction.symptoms."),
+          )?.[1]
+        }
+        onChange={onSymptoms}
+      />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
           id={fieldId("reaction.onsetDate")}
@@ -475,6 +555,93 @@ export function HistoryStep({ draft, errors, onChange }: HistoryStepProps) {
           />
         )}
       </Field>
+    </div>
+  );
+}
+
+function SymptomsEditor({
+  symptoms,
+  error,
+  onChange,
+}: {
+  symptoms: string[];
+  error?: string;
+  onChange: (symptoms: string[]) => void;
+}) {
+  const [entry, setEntry] = useState("");
+  const add = () => {
+    const value = entry.trim();
+    if (value.length < 2) return;
+    if (!symptoms.some((s) => s.toLowerCase() === value.toLowerCase())) {
+      onChange([...symptoms, value]);
+    }
+    setEntry("");
+  };
+  const full = symptoms.length >= MAX_SYMPTOMS;
+  return (
+    <div className="flex flex-col gap-2">
+      <label
+        htmlFor={fieldId("reaction.symptoms")}
+        className="text-sm font-medium"
+      >
+        Main symptoms
+      </label>
+      <p id="symptoms-hint" className="text-xs text-muted">
+        Optional. Short phrases in your own words, e.g. “itchy rash”. Your full
+        description is kept as you wrote it.
+      </p>
+      {symptoms.length > 0 ? (
+        <ul className="flex flex-wrap gap-2" aria-label="Symptoms added">
+          {symptoms.map((symptom) => (
+            <li key={symptom}>
+              <span className="inline-flex items-center gap-1 rounded-full bg-surface-muted py-1 pr-1 pl-3 text-sm">
+                {symptom}
+                <button
+                  type="button"
+                  className="rounded-full p-1 hover:bg-border"
+                  aria-label={`Remove ${symptom}`}
+                  onClick={() =>
+                    onChange(symptoms.filter((s) => s !== symptom))
+                  }
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="flex gap-2">
+        <Input
+          id={fieldId("reaction.symptoms")}
+          aria-describedby="symptoms-hint"
+          aria-invalid={error ? true : undefined}
+          maxLength={100}
+          disabled={full}
+          value={entry}
+          placeholder={
+            full ? `Up to ${MAX_SYMPTOMS} symptoms` : "Add a symptom"
+          }
+          onChange={(event) => setEntry(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              add();
+            }
+          }}
+        />
+        <Button
+          variant="secondary"
+          onClick={add}
+          disabled={full || entry.trim().length < 2}
+        >
+          <Plus aria-hidden="true" />
+          Add
+        </Button>
+      </div>
+      {error ? (
+        <p className="text-xs font-medium text-danger">{error}</p>
+      ) : null}
     </div>
   );
 }

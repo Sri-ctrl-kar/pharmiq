@@ -21,3 +21,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Style with semantic tokens from `src/app/globals.css` (`bg-primary`, `text-muted`,
   `border-border`…), not raw Tailwind palette colours.
 - Before committing: `npm run lint && npm run typecheck && npm test && npm run build`.
+- AI assistance is optional and advisory. Model output must pass
+  `src/server/ai/verify-extraction.ts`; values needing review are never pre-selected; never
+  overwrite reporter input; send only the minimised description (`minimiseForAi`), never
+  patient fields; never log description text. The manual flow must work without AI.

@@ -62,6 +62,8 @@ Installed in the foundation milestone:
 | `vitest`                                             | Unit tests                                 |
 | `prettier`, `prettier-plugin-tailwindcss`            | Formatting                                 |
 
+Added in M3: `@anthropic-ai/sdk` — Claude API (server-side only).
+
 Added in M2: `@electric-sql/pglite` (dev) — in-process Postgres used by the test suite to
 apply the real migration and verify RLS and `submit_report`.
 
@@ -69,7 +71,6 @@ Added in later milestones (not yet installed):
 
 | Package              | Milestone | Purpose                      |
 | -------------------- | --------- | ---------------------------- |
-| `@anthropic-ai/sdk`  | M3        | Claude API extraction        |
 | `recharts`           | M5        | Dashboard charts             |
 | `@playwright/test`   | M6        | End-to-end tests in CI       |
 | `supabase` CLI (dev) | M4        | Local stack, type generation |
@@ -89,14 +90,18 @@ Added in later milestones (not yet installed):
 │   │   ├── dashboard/            ← synthetic analytics (M5)
 │   │   ├── reviewer/             ← protected reviewer workflow (M4)
 │   │   ├── design-system/        ← living style guide
-│   │   └── api/health/route.ts   ← config + storage mode (no values)
+│   │   ├── api/health/route.ts   ← config + storage mode (no values)
+│   │   └── api/extract/route.ts  ← AI suggestions (M3)
 │   ├── components/{ui,layout,safety}/
 │   ├── lib/
 │   │   ├── reports/              ← shared: constants, Zod schema, missing info, report ID, privacy
+│   │   ├── ai/                   ← extraction contract, apply rules, synthetic examples
 │   │   ├── env-schema.ts, site.ts, utils.ts
 │   └── server/                   ← server-only
 │       ├── env.ts
-│       └── reports/              ← repository contract, local demo + Supabase adapters, submit service
+│       ├── reports/              ← repository contract, local demo + Supabase adapters, submit service
+│       └── ai/                   ← prompt, Claude provider, verifier, rate limit, service
+├── evals/extraction/             ← live eval runner + scorer (needs API key)
 └── tests/                        ← vitest unit + Postgres (PGlite) tests
 ```
 
@@ -145,16 +150,18 @@ Browser ─ Server Action ─ handleReportSubmission ─ submitReport (Zod valid
   backups. It is labelled as such in the UI, the file and the docs.
 
 Deviations from the original draft: reporter contact details (`report_contacts`) are not
-collected yet — the form asks for no names, phone numbers or addresses. `ai_extractions`,
-`report_reviews` and `audit_log` arrive with the milestones that use them.
+collected yet — the form asks for no names, phone numbers or addresses. `report_reviews` and
+`audit_log` arrive with the milestones that use them. `ai_extractions` (storing raw AI
+output) was dropped by design: only the reporter-confirmed values and an `ai_assisted`
+flag are stored. M3 added `reaction_symptoms text[]` and `ai_assisted`.
 
 ## 6. Milestones
 
-| #      | Milestone                     | Status / exit criteria                                                                                                                                                                                        |
-| ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **M1** | Foundation                    | Done. App shell, design system, safety copy, env validation, health endpoint.                                                                                                                                 |
-| **M2** | Reporting form and data layer | Done. Multi-step form with review, shared Zod validation, missing-information checks, report IDs, idempotent submission, local demo store, Supabase migration + RLS + RPC tested against Postgres.            |
-| M3     | AI-assisted extraction        | `/api/extract` with Claude, structured output + evidence quotes, de-identified input only, rate limiting, accept/edit/reject each suggestion; audit in `ai_extractions`. Graceful fallback when unconfigured. |
-| M4     | Reviewer workflow             | Supabase Auth login, `proxy.ts` session refresh, role-gated `/reviewer` queue, report detail, status transitions, causality opinion & notes, audit log.                                                       |
-| M5     | Synthetic analytics           | Aggregate RPCs over `is_synthetic` rows only, dashboard with persistent "Synthetic data" labelling.                                                                                                           |
-| M6     | Hardening & demo polish       | Rate limiting, accessibility pass, Playwright E2E in CI, privacy review, deployment.                                                                                                                          |
+| #      | Milestone                     | Status / exit criteria                                                                                                                                                                                                                                       |
+| ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **M1** | Foundation                    | Done. App shell, design system, safety copy, env validation, health endpoint.                                                                                                                                                                                |
+| **M2** | Reporting form and data layer | Done. Multi-step form with review, shared Zod validation, missing-information checks, report IDs, idempotent submission, local demo store, Supabase migration + RLS + RPC tested against Postgres.                                                           |
+| **M3** | AI-assisted extraction        | Done. `/api/extract` with Claude structured output, evidence quotes, deterministic verifier, data minimisation, rate limits, accept/edit/reject each suggestion, manual fallback. AI output is not stored (only `ai_assisted`). See `docs/AI_EXTRACTION.md`. |
+| M4     | Reviewer workflow             | Supabase Auth login, `proxy.ts` session refresh, role-gated `/reviewer` queue, report detail, status transitions, causality opinion & notes, audit log.                                                                                                      |
+| M5     | Synthetic analytics           | Aggregate RPCs over `is_synthetic` rows only, dashboard with persistent "Synthetic data" labelling.                                                                                                                                                          |
+| M6     | Hardening & demo polish       | Rate limiting, accessibility pass, Playwright E2E in CI, privacy review, deployment.                                                                                                                                                                         |

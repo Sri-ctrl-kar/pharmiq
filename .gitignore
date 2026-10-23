@@ -43,3 +43,6 @@ next-env.d.ts
 
 # local demonstration report store (never commit)
 /.data/
+
+# live eval outputs
+/evals/extraction/results/

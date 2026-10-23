@@ -31,6 +31,12 @@ import { safetyCopy } from "@/lib/site";
 import { cn } from "@/lib/utils";
 import { submitReportAction } from "../actions";
 import {
+  applyExtraction,
+  type ExtractionDecisions,
+} from "@/lib/ai/apply-extraction";
+import { AiAssistPanel } from "./ai-assist-panel";
+import {
+  DescribeStep,
   HistoryStep,
   MedicinesStep,
   ReactionStep,
@@ -46,8 +52,9 @@ import { SubmissionSuccess } from "./submission-success";
 
 const steps: { id: FormStep; title: string }[] = [
   { id: "reporter", title: "About the report" },
+  { id: "describe", title: "What happened" },
   { id: "medicines", title: "Suspected medicines" },
-  { id: "reaction", title: "The reaction" },
+  { id: "reaction", title: "Reaction details" },
   { id: "history", title: "Other information" },
   { id: "review", title: "Review and submit" },
 ];
@@ -58,14 +65,17 @@ const NETWORK_ERROR =
 /** Remounts the form with a fresh draft (and idempotency key) after a submission. */
 export function ReportFormShell({
   storageMode,
+  aiAvailable,
 }: {
   storageMode: StorageModeLabel;
+  aiAvailable: boolean;
 }) {
   const [generation, setGeneration] = useState(0);
   return (
     <ReportForm
       key={generation}
       storageMode={storageMode}
+      aiAvailable={aiAvailable}
       onReset={() => setGeneration((value) => value + 1)}
     />
   );
@@ -73,9 +83,11 @@ export function ReportFormShell({
 
 function ReportForm({
   storageMode,
+  aiAvailable,
   onReset,
 }: {
   storageMode: StorageModeLabel;
+  aiAvailable: boolean;
   onReset: () => void;
 }) {
   const [draft, setDraft] = useState<ReportDraft>(() =>
@@ -86,6 +98,8 @@ function ReportForm({
   const [attempted, setAttempted] = useState<Set<FormStep>>(() => new Set());
   const [serverErrors, setServerErrors] = useState<FieldErrors>({});
   const [dirty, setDirty] = useState(false);
+  // Form state before AI suggestions were applied, so they can be undone.
+  const [beforeAi, setBeforeAi] = useState<ReportDraft | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusOnStepChange = useRef(false);
 
@@ -165,6 +179,15 @@ function ReportForm({
     setDirty(true);
   }
 
+  function applySuggestions(decisions: ExtractionDecisions) {
+    const { draft: next, ...summary } = applyExtraction(draft, decisions);
+    if (summary.applied.length > 0) {
+      setBeforeAi(draft);
+      update(() => next);
+    }
+    return summary;
+  }
+
   function goTo(index: number) {
     focusOnStepChange.current = true;
     setStepIndex(index);
@@ -221,7 +244,7 @@ function ReportForm({
             style={{ width: `${((stepIndex + 1) / steps.length) * 100}%` }}
           />
         </div>
-        <ol className="hidden gap-2 sm:grid sm:grid-cols-5">
+        <ol className="hidden gap-2 sm:grid sm:grid-cols-6">
           {steps.map((s, index) => {
             const reachable = index <= furthestStep;
             const current = index === stepIndex;
@@ -308,6 +331,29 @@ function ReportForm({
             />
           ) : null}
 
+          {step.id === "describe" ? (
+            <DescribeStep
+              draft={draft}
+              errors={errors}
+              onDescription={(description) =>
+                update((d) => ({
+                  ...d,
+                  reaction: { ...d.reaction, description },
+                }))
+              }
+            >
+              <AiAssistPanel
+                description={draft.reaction.description}
+                available={aiAvailable}
+                onApply={applySuggestions}
+                onUndo={() => {
+                  if (beforeAi) update(() => beforeAi);
+                  setBeforeAi(null);
+                }}
+              />
+            </DescribeStep>
+          ) : null}
+
           {step.id === "reaction" ? (
             <ReactionStep
               draft={draft}
@@ -317,6 +363,9 @@ function ReportForm({
                   ...d,
                   reaction: { ...d.reaction, [key]: value },
                 }))
+              }
+              onSymptoms={(symptoms) =>
+                update((d) => ({ ...d, reaction: { ...d.reaction, symptoms } }))
               }
             />
           ) : null}

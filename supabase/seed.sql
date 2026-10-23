@@ -1,30 +1,30 @@
 -- SYNTHETIC demonstration records only. Invented for the HEALTHX 2026 demo; they do not
--- describe real people or real medicine safety signals. Mirrors
+-- describe real people or real medicine safety signals. Requires all migrations. Mirrors
 -- src/server/reports/demo-seed.ts. Run by `supabase db reset` (local) or manually.
 
 insert into public.reports (
   public_id, submitted_at, status, reporter_type,
   patient_initials, patient_age_years, patient_sex, patient_state,
-  reaction_description, reaction_onset_date, reaction_onset_time,
+  reaction_description, reaction_onset_date, reaction_onset_time, reaction_symptoms,
   reaction_outcome, medical_attention, other_medicines, medical_history,
   missing_fields, is_synthetic
 ) values
   ('ADR-2026-SYN001', '2026-09-02T05:30:00Z', 'submitted', 'patient',
    'AK', 34, 'female', 'Karnataka',
    '[Synthetic demo record] Itchy red rash on both arms noticed on the third day of the course.',
-   '2026-08-30', null, 'recovering', 'clinic_or_doctor', null, null,
+   '2026-08-30', null, '{"itchy red rash"}', 'recovering', 'clinic_or_doctor', null, null,
    '{}', true),
   ('ADR-2026-SYN002', '2026-09-10T11:15:00Z', 'under_review', 'caregiver',
    'RS', 71, 'male', 'Maharashtra',
    '[Synthetic demo record] Reported muscle aches in both legs and tiredness for about a week.',
-   null, null, 'not_recovered', 'unknown',
+   null, null, '{"muscle aches",tiredness}', 'not_recovered', 'unknown',
    'Amlodipine 5 mg daily', 'Type 2 diabetes, high blood pressure',
    '{suspectedMedicines.0.startDate,suspectedMedicines.1.dose,reaction.onsetDate,reaction.medicalAttention}',
    true),
   ('ADR-2026-SYN003', '2026-09-21T08:45:00Z', 'reviewed', 'healthcare_professional',
    null, 8, 'female', 'Tamil Nadu',
    '[Synthetic demo record] Swelling around the eyes and hives about two hours after a dose.',
-   '2026-09-19', '16:00', 'recovered', 'emergency_department',
+   '2026-09-19', '16:00', '{"swelling around the eyes",hives}', 'recovered', 'emergency_department',
    null, 'No known allergies reported', '{}', true)
 on conflict (public_id) do nothing;
 

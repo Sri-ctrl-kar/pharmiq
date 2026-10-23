@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   MAX_SUSPECTED_MEDICINES,
+  MAX_SYMPTOMS,
   indianStatesAndUts,
   medicalAttentionOptions,
   medicineRoutes,
@@ -137,11 +138,27 @@ export const reportSubmissionSchema = z
         blankToNull,
         z.string().regex(TIME, "Enter a time like 14:30.").nullable(),
       ),
+      /** Short symptom phrases in the reporter's words, e.g. "itchy rash". */
+      symptoms: z
+        .array(
+          z
+            .string()
+            .trim()
+            .min(2, "Each symptom needs at least 2 characters.")
+            .max(100, "Keep each symptom under 100 characters."),
+        )
+        .max(MAX_SYMPTOMS, `List up to ${MAX_SYMPTOMS} symptoms.`)
+        .default([])
+        .transform((items) => [
+          ...new Map(items.map((item) => [item.toLowerCase(), item])).values(),
+        ]),
       outcome: requiredEnum(reactionOutcomes.values),
       medicalAttention: requiredEnum(medicalAttentionOptions.values),
     }),
     otherMedicines: optionalText(2000),
     medicalHistory: optionalText(2000),
+    /** True when the reporter applied AI-extracted suggestions (always user-confirmed). */
+    aiAssisted: z.boolean().default(false),
     declaration: z.literal(true, {
       error:
         "Confirm that the information is accurate to the best of your knowledge.",
@@ -193,9 +210,13 @@ export type ReportDraft = {
   reporterType: string;
   patient: Record<keyof ReportSubmission["patient"], string>;
   suspectedMedicines: MedicineDraft[];
-  reaction: Record<keyof ReportSubmission["reaction"], string>;
+  reaction: Record<
+    Exclude<keyof ReportSubmission["reaction"], "symptoms">,
+    string
+  > & { symptoms: string[] };
   otherMedicines: string;
   medicalHistory: string;
+  aiAssisted: boolean;
   declaration: boolean;
 };
 
@@ -216,11 +237,13 @@ export const emptyReportDraft = (idempotencyKey: string): ReportDraft => ({
     description: "",
     onsetDate: "",
     onsetTime: "",
+    symptoms: [],
     outcome: "",
     medicalAttention: "",
   },
   otherMedicines: "",
   medicalHistory: "",
+  aiAssisted: false,
   declaration: false,
 });
 
@@ -241,8 +264,14 @@ export function toFieldErrors(
 /** Field-error keys belonging to each form step, by path prefix. */
 export const stepFieldPrefixes = {
   reporter: ["reporterType", "patient."],
+  describe: ["reaction.description"],
   medicines: ["suspectedMedicines"],
-  reaction: ["reaction."],
+  reaction: [
+    "reaction.onset",
+    "reaction.symptoms",
+    "reaction.outcome",
+    "reaction.medicalAttention",
+  ],
   history: ["otherMedicines", "medicalHistory"],
   review: ["declaration", "idempotencyKey", "_form"],
 } as const;

@@ -40,10 +40,12 @@ export function toSubmitReportPayload(record: NewReportRecord) {
     reaction_description: content.reaction.description,
     reaction_onset_date: content.reaction.onsetDate,
     reaction_onset_time: content.reaction.onsetTime,
+    reaction_symptoms: content.reaction.symptoms,
     reaction_outcome: content.reaction.outcome,
     medical_attention: content.reaction.medicalAttention,
     other_medicines: content.otherMedicines,
     medical_history: content.medicalHistory,
+    ai_assisted: content.aiAssisted,
     missing_fields: record.missingFields,
     suspected_medicines: content.suspectedMedicines.map((medicine) => ({
       name: medicine.name,

@@ -101,6 +101,7 @@ export const indianStatesAndUts = [
 ] as const;
 
 export const MAX_SUSPECTED_MEDICINES = 5;
+export const MAX_SYMPTOMS = 10;
 
 export type ReporterType = (typeof reporterTypes.values)[number];
 export type PatientSex = (typeof patientSexes.values)[number];
