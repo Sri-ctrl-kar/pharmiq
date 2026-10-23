@@ -8,7 +8,7 @@ export default function ReviewerPage() {
     <MilestonePlaceholder
       title="Reviewer workspace"
       description="For authorised healthcare professionals to review submitted reports. Sign-in will be required."
-      milestone="Milestone 5"
+      milestone="Milestone 4"
     />
   );
 }

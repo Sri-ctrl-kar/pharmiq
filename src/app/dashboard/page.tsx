@@ -9,7 +9,7 @@ export default function DashboardPage() {
     <MilestonePlaceholder
       title="Analytics dashboard"
       description="Aggregate trends across reported suspected reactions."
-      milestone="Milestone 6"
+      milestone="Milestone 5"
     >
       <SyntheticDataBanner />
     </MilestonePlaceholder>

@@ -62,158 +62,99 @@ Installed in the foundation milestone:
 | `vitest`                                             | Unit tests                                 |
 | `prettier`, `prettier-plugin-tailwindcss`            | Formatting                                 |
 
+Added in M2: `@electric-sql/pglite` (dev) — in-process Postgres used by the test suite to
+apply the real migration and verify RLS and `submit_report`.
+
 Added in later milestones (not yet installed):
 
-| Package                                   | Milestone      | Purpose                     |
-| ----------------------------------------- | -------------- | --------------------------- |
-| `@anthropic-ai/sdk`                       | M4             | Claude API extraction       |
-| `recharts`                                | M6             | Dashboard charts            |
-| `react-hook-form` + `@hookform/resolvers` | M3 (if needed) | Multi-step form state       |
-| `@playwright/test`                        | M3+            | End-to-end smoke tests      |
-| `supabase` CLI (dev)                      | M2             | Migrations, type generation |
+| Package              | Milestone | Purpose                      |
+| -------------------- | --------- | ---------------------------- |
+| `@anthropic-ai/sdk`  | M3        | Claude API extraction        |
+| `recharts`           | M5        | Dashboard charts             |
+| `@playwright/test`   | M6        | End-to-end tests in CI       |
+| `supabase` CLI (dev) | M4        | Local stack, type generation |
 
 ## 4. File structure
 
 ```
 .
-├── docs/ARCHITECTURE.md          ← this file
+├── docs/ARCHITECTURE.md
 ├── supabase/
-│   ├── migrations/               ← SQL migrations (M2)
-│   └── seed.sql                  ← synthetic demo data (M6)
+│   ├── migrations/               ← SQL migrations (reports, RLS, submit_report)
+│   └── seed.sql                  ← SYNTHETIC demo records
 ├── src/
-│   ├── proxy.ts                  ← auth cookie refresh, /reviewer guard (M5)
 │   ├── app/
-│   │   ├── layout.tsx            ← shell: header, footer, safety banner
-│   │   ├── page.tsx              ← landing
-│   │   ├── report/               ← guided reporting flow (M3–M4)
-│   │   ├── report/[reportId]/    ← confirmation / status lookup (M3)
-│   │   ├── dashboard/            ← synthetic analytics (M6)
-│   │   ├── reviewer/             ← protected reviewer workflow (M5)
-│   │   ├── login/                ← reviewer sign-in (M5)
+│   │   ├── report/               ← guided reporting flow + server action (M2)
+│   │   │   └── _components/      ← steps, review, confirmation
+│   │   ├── dashboard/            ← synthetic analytics (M5)
+│   │   ├── reviewer/             ← protected reviewer workflow (M4)
 │   │   ├── design-system/        ← living style guide
-│   │   └── api/
-│   │       ├── health/route.ts   ← config status (booleans only)
-│   │       └── extract/route.ts  ← AI extraction (M4)
-│   ├── components/
-│   │   ├── ui/                   ← primitives: Button, Card, Badge, Alert, form fields
-│   │   ├── layout/               ← SiteHeader, SiteFooter, PageHeader, Container
-│   │   └── safety/               ← SafetyNotice, SyntheticDataBadge
+│   │   └── api/health/route.ts   ← config + storage mode (no values)
+│   ├── components/{ui,layout,safety}/
 │   ├── lib/
-│   │   ├── env.ts                ← validated, server-only env access
-│   │   ├── utils.ts              ← cn() etc.
-│   │   ├── site.ts               ← nav + product copy
-│   │   └── schemas/              ← shared Zod schemas (M3)
-│   └── server/                   ← server-only DAL, Supabase clients, AI service
-└── tests/                        ← vitest unit tests
+│   │   ├── reports/              ← shared: constants, Zod schema, missing info, report ID, privacy
+│   │   ├── env-schema.ts, site.ts, utils.ts
+│   └── server/                   ← server-only
+│       ├── env.ts
+│       └── reports/              ← repository contract, local demo + Supabase adapters, submit service
+└── tests/                        ← vitest unit + Postgres (PGlite) tests
 ```
 
-## 5. Database schema (draft — implemented in M2)
+## 5. Data model and storage (implemented in M2)
 
-```sql
-create type report_status    as enum ('submitted','under_review','needs_info','reviewed','closed');
-create type reporter_type    as enum ('patient','caregiver','healthcare_professional','other');
-create type seriousness      as enum ('not_serious','serious','unknown');
-create type reaction_outcome as enum ('recovered','recovering','not_recovered','recovered_with_sequelae','fatal','unknown');
-create type user_role        as enum ('reporter','reviewer','admin');
+The source of truth is `supabase/migrations/20261023000000_reports.sql`; the application
+shape is `ReportContent` in `src/lib/reports/schema.ts`.
 
-create table profiles (               -- 1:1 with auth.users
-  id         uuid primary key references auth.users on delete cascade,
-  role       user_role not null default 'reporter',
-  full_name  text,
-  created_at timestamptz not null default now()
-);
+| Table              | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reports`          | One row per report: `public_id` (`ADR-YYYY-XXXXXX`, unique, format-checked), `idempotency_key` (unique), `submitted_at`, `status` (`submitted` → `under_review` → `needs_info` / `reviewed` → `closed`), `reporter_type`, de-identified patient fields (initials, age, sex, state), reaction description in the reporter's words, onset date/time, outcome, medical attention, other medicines, medical history, `missing_fields[]`, `is_synthetic`. |
+| `report_medicines` | 1–5 suspected medicines per report (`position`, name, dose, route, frequency, start date), `on delete cascade`, unique `(report_id, position)`.                                                                                                                                                                                                                                                                                                      |
+| `profiles`         | `role` (`reporter` / `reviewer` / `admin`) per `auth.users` row.                                                                                                                                                                                                                                                                                                                                                                                     |
 
-create table reports (
-  id                uuid primary key default gen_random_uuid(),
-  public_id         text unique not null,          -- ADR-2026-XXXXXX
-  status            report_status not null default 'submitted',
-  reporter_type     reporter_type not null,
-  submitted_by      uuid references auth.users,    -- null for anonymous
-  -- patient (de-identified)
-  patient_initials  text check (char_length(patient_initials) <= 4),
-  patient_age_years int  check (patient_age_years between 0 and 120),
-  patient_sex       text check (patient_sex in ('female','male','other','unknown')),
-  patient_state     text,                          -- Indian state / UT
-  -- event
-  narrative         text not null,                 -- reporter's own words
-  onset_date        date,
-  seriousness       seriousness not null default 'unknown',
-  outcome           reaction_outcome not null default 'unknown',
-  ai_assisted       boolean not null default false,
-  missing_fields    text[] not null default '{}',  -- computed at submit
-  is_synthetic      boolean not null default false,
-  created_at        timestamptz not null default now(),
-  updated_at        timestamptz not null default now()
-);
+Integrity and unknown values:
 
-create table report_contacts (        -- PII split out; reviewer-only RLS
-  report_id  uuid primary key references reports on delete cascade,
-  name       text, email text, phone text,
-  consent_to_contact boolean not null default false
-);
+- Every optional field is nullable and `null` means "not provided". Enumerated answers that
+  are required (outcome, medical attention) have an explicit `unknown` value. Nothing is
+  defaulted or inferred.
+- `missing_fields` records which clinically useful fields were blank or "not known" at
+  submission (`findMissingInformation`).
+- Check constraints mirror the Zod limits (lengths, age 0–120, ID format, onset time
+  requires a date, medicine count 1–5).
 
-create table report_medicines (
-  id          uuid primary key default gen_random_uuid(),
-  report_id   uuid not null references reports on delete cascade,
-  name        text not null,               -- as reported (brand or generic)
-  role        text not null default 'suspected' check (role in ('suspected','concomitant')),
-  dose_text   text, route text, indication text,
-  start_date  date, stop_date date,
-  action_taken text check (action_taken in ('withdrawn','dose_reduced','dose_increased','not_changed','unknown','not_applicable'))
-);
+Write path and access control:
 
-create table report_reactions (
-  id          uuid primary key default gen_random_uuid(),
-  report_id   uuid not null references reports on delete cascade,
-  description text not null,               -- reporter's term, verbatim
-  onset_date  date, end_date date,
-  outcome     reaction_outcome not null default 'unknown'
-);
-
-create table ai_extractions (           -- audit of AI suggestions vs confirmed values
-  id          uuid primary key default gen_random_uuid(),
-  report_id   uuid references reports on delete cascade,
-  model       text not null,
-  suggestion  jsonb not null,              -- raw validated AI output incl. evidence quotes
-  accepted    jsonb,                       -- what the user confirmed
-  created_at  timestamptz not null default now()
-);
-
-create table report_reviews (
-  id          uuid primary key default gen_random_uuid(),
-  report_id   uuid not null references reports on delete cascade,
-  reviewer_id uuid not null references auth.users,
-  from_status report_status, to_status report_status not null,
-  causality_opinion text check (causality_opinion in ('certain','probable','possible','unlikely','unclassified','unassessable')),
-  note        text,
-  created_at  timestamptz not null default now()
-);
-
-create table audit_log (
-  id bigserial primary key, actor uuid, action text not null,
-  entity text not null, entity_id uuid, at timestamptz not null default now()
-);
+```
+Browser ─ Server Action ─ handleReportSubmission ─ submitReport (Zod validation,
+          missing-info, report ID + collision retry, idempotency)
+                              └─ ReportRepository
+                                   ├─ SupabaseReportRepository ─ rpc submit_report (service role)
+                                   └─ LocalDemoReportRepository ─ .data/demo-reports.json
 ```
 
-RLS summary:
+- `submit_report(jsonb)` is `security definer`, executable **only by `service_role`**. It
+  re-validates (dates not in the future, medicine count, idempotency key present), forces
+  `status = 'submitted'` and `is_synthetic = false`, inserts the report and medicines in
+  one transaction, and returns the existing report for a repeated idempotency key.
+- `anon` and `authenticated` have no insert/update/delete on any table (Supabase's
+  default grants are revoked). Authenticated users with `reviewer`/`admin` role can read
+  reports via RLS; users read only their own profile and cannot change their role.
+- Storage selection (`src/server/reports/storage.ts`): all three Supabase variables set →
+  Supabase; none set → local demo store; partially set → submission disabled (fails
+  closed).
+- The local demo store is a plain JSON file: not encrypted, no access control, no
+  backups. It is labelled as such in the UI, the file and the docs.
 
-- `reports`, `report_medicines`, `report_reactions`: insert allowed to anon/auth via
-  a `security definer` RPC (`submit_report`) only; select allowed to the submitter
-  and to `reviewer`/`admin`; update only by `reviewer`/`admin`.
-- `report_contacts`: select only `reviewer`/`admin`; never exposed to analytics.
-- `report_reviews`, `audit_log`: reviewer/admin insert & select; no update/delete.
-- Analytics: a `security definer` function returning **aggregates over
-  `is_synthetic = true` rows only**, so the dashboard never touches real reports.
-- Public status lookup by `public_id` returns status only (no clinical content).
+Deviations from the original draft: reporter contact details (`report_contacts`) are not
+collected yet — the form asks for no names, phone numbers or addresses. `ai_extractions`,
+`report_reviews` and `audit_log` arrive with the milestones that use them.
 
 ## 6. Milestones
 
-| #      | Milestone                  | Deliverable / exit criteria                                                                                                                                                                                         |
-| ------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **M1** | **Foundation** _(this PR)_ | Next.js app, design system tokens + primitives, layout shell, safety copy, env validation, health endpoint, lint/typecheck/test/build green.                                                                        |
-| M2     | Database & Supabase wiring | Migrations for the schema above, RLS policies, `submit_report` RPC, generated TS types, server/browser Supabase clients, `proxy.ts` session refresh.                                                                |
-| M3     | Guided reporting form      | Multi-step form (reporter → patient → medicines → reaction → review), shared Zod schema, missing-field checks, Server Action persistence, report ID confirmation page. Works with no AI.                            |
-| M4     | AI-assisted extraction     | `/api/extract` with Claude, structured output + evidence quotes, rate limiting, "review suggestions" step where users accept/edit/reject each item; audit in `ai_extractions`. Graceful fallback when unconfigured. |
-| M5     | Reviewer workflow          | Supabase Auth login, role-gated `/reviewer` queue, report detail, status transitions, causality opinion & notes, audit log.                                                                                         |
-| M6     | Synthetic analytics        | Seed script for clearly-synthetic reports, aggregate RPCs, dashboard (trends, top medicines/reactions, seriousness, state map/table) with persistent "Synthetic data" labelling.                                    |
-| M7     | Hardening & demo polish    | Accessibility pass, E2E smoke tests, privacy review, demo script, deployment.                                                                                                                                       |
+| #      | Milestone                     | Status / exit criteria                                                                                                                                                                                        |
+| ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **M1** | Foundation                    | Done. App shell, design system, safety copy, env validation, health endpoint.                                                                                                                                 |
+| **M2** | Reporting form and data layer | Done. Multi-step form with review, shared Zod validation, missing-information checks, report IDs, idempotent submission, local demo store, Supabase migration + RLS + RPC tested against Postgres.            |
+| M3     | AI-assisted extraction        | `/api/extract` with Claude, structured output + evidence quotes, de-identified input only, rate limiting, accept/edit/reject each suggestion; audit in `ai_extractions`. Graceful fallback when unconfigured. |
+| M4     | Reviewer workflow             | Supabase Auth login, `proxy.ts` session refresh, role-gated `/reviewer` queue, report detail, status transitions, causality opinion & notes, audit log.                                                       |
+| M5     | Synthetic analytics           | Aggregate RPCs over `is_synthetic` rows only, dashboard with persistent "Synthetic data" labelling.                                                                                                           |
+| M6     | Hardening & demo polish       | Rate limiting, accessibility pass, Playwright E2E in CI, privacy review, deployment.                                                                                                                          |

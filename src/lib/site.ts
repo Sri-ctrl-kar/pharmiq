@@ -26,6 +26,10 @@ export const safetyCopy = {
     "If you or someone else has severe symptoms such as difficulty breathing, swelling of the face or throat, or loss of consciousness, call 112 or go to the nearest emergency department now.",
   notOfficial:
     "ADR Connect India is an independent hackathon prototype. It is not affiliated with, endorsed by, or integrated with the Pharmacovigilance Programme of India (PvPI), IPC or CDSCO.",
+  notSentToPvpi:
+    "This report is recorded in ADR Connect India only. It has not been sent to the Pharmacovigilance Programme of India (PvPI), CDSCO or any other regulator.",
+  localDemoStorage:
+    "Demonstration storage: reports are saved to a local file on this server, which is not a secure production database. Use made-up or test details only — do not enter real patient information.",
   syntheticData:
     "All analytics in this demonstration use synthetic data generated for testing. They do not describe real patients or real medicine safety signals.",
 } as const;

@@ -12,9 +12,47 @@ schema and milestone plan.
 
 ## Status
 
-Milestone 1 (foundation) is complete: Next.js app shell, design system, safety copy,
-env validation and a health endpoint. Reporting, AI extraction, the reviewer workflow
-and analytics are placeholders until their milestones land.
+| Milestone                                              | State                           |
+| ------------------------------------------------------ | ------------------------------- |
+| M1 Foundation — app shell, design system, safety copy  | Done                            |
+| M2 Reporting form and data layer                       | Done (see below)                |
+| M3 AI extraction · M4 Reviewer workflow · M5 Analytics | Not started (placeholder pages) |
+
+**Working now, with no credentials:** the `/report` multi-step form (reporter, suspected
+medicines, reaction, other information, review), validation on the client and again on the
+server, missing-information checks, report IDs (`ADR-2026-XXXXXX`), duplicate-submission
+protection, and saving to the **local demonstration store**.
+
+**Needs credentials:** persistent production storage in Supabase (below). The SQL
+migration, RLS policies and `submit_report` function are tested in this repo against a real
+Postgres engine (PGlite) with Supabase's `auth` objects stubbed. They have **not** yet been
+run against a live Supabase project.
+
+## Report storage
+
+The storage backend is chosen at request time (`GET /api/health` shows which):
+
+| Supabase variables set | Storage                                                               | Notes                                                                                                                                                                                                                                                                                     |
+| ---------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| None                   | **Local demo store** — `.data/demo-reports.json` (or `DEMO_DATA_DIR`) | Plain JSON file on the server: **not encrypted, no access control, no backups. Not a secure production database.** Seeded with 3 clearly labelled synthetic records. The UI tells users to enter test data only. Needs a writable filesystem, so it will not persist on serverless hosts. |
+| All three              | **Supabase Postgres**                                                 | Writes go through the `submit_report` database function using the service-role key on the server only. RLS blocks all direct reads and writes from `anon` and `authenticated` users; only reviewer/admin profiles can read reports.                                                       |
+| Some                   | **Submission disabled**                                               | Fails closed with an "unavailable" message rather than writing to the demo store.                                                                                                                                                                                                         |
+
+### Enabling persistent Supabase storage
+
+1. Create a Supabase project.
+2. Apply the migration: run `supabase/migrations/20261023000000_reports.sql` in the SQL
+   editor, or `supabase link` then `supabase db push`.
+3. Optionally load the synthetic demo records: `supabase/seed.sql`.
+4. Set these in `.env.local` (or your host's environment), from Project settings → API:
+   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+   The service-role key is server-only; never prefix it with `NEXT_PUBLIC_`.
+5. Restart and check `GET /api/health` returns `"storage": "supabase"`, then submit a test report.
+6. Reviewer access (Milestone 4): add a row to `public.profiles` with `role = 'reviewer'`
+   for a Supabase Auth user.
+
+Before handling real reports you would also need a hosting/data-protection review (e.g.
+India's DPDP Act obligations), rate limiting on the public form, backups and monitoring.
 
 ## Getting started
 
@@ -22,7 +60,7 @@ Requires Node.js 22+.
 
 ```bash
 npm install
-cp .env.example .env.local   # optional for now; the app runs without any keys
+cp .env.example .env.local   # optional: with no keys, reports go to the local demo store
 npm run dev                  # http://localhost:3000
 ```
 
@@ -35,10 +73,10 @@ npm run dev                  # http://localhost:3000
 | `npm test`                    | Vitest unit tests         |
 | `npm run format`              | Prettier                  |
 
-Useful routes: `/design-system` (living style guide), `/api/health` (which
-integrations are configured — booleans only).
+Useful routes: `/report` (reporting form), `/design-system` (living style guide),
+`/api/health` (storage mode and which integrations are configured — never values).
 
 ## Tech stack
 
 Next.js 16 (App Router, Cache Components) · React 19 · TypeScript · Tailwind CSS v4 ·
-Supabase (Postgres + Auth) · Claude API (optional) · Zod · Vitest.
+Supabase (Postgres + Auth) · Claude API (optional) · Zod · Vitest · PGlite (tests).

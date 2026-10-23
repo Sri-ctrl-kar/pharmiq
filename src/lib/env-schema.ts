@@ -15,6 +15,8 @@ export const serverEnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: optionalString,
   ANTHROPIC_API_KEY: optionalString,
   ANTHROPIC_MODEL: optionalString,
+  /** Directory for the local demonstration report store (no Supabase). */
+  DEMO_DATA_DIR: optionalString,
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
