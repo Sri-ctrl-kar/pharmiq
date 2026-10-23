@@ -1,6 +1,20 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { syntheticSeedReports } from "./demo-seed";
+import {
+  canTransition,
+  noteRequired,
+  type StatusChange,
+} from "@/lib/review/status";
+import type {
+  ReviewReport,
+  ReviewerIdentity,
+  StatusEvent,
+} from "@/lib/review/types";
+import type {
+  ReviewRepository,
+  StatusUpdateResult,
+} from "@/server/review/repository";
+import { syntheticSeedReports, type SeedReport } from "./demo-seed";
 import {
   ReportIdConflictError,
   StorageUnavailableError,
@@ -13,7 +27,12 @@ import {
 export const LOCAL_DEMO_NOTICE =
   "LOCAL DEMONSTRATION STORAGE. Plain JSON file on the app server: not encrypted, no access control, no backups. Not a secure production database. Use synthetic or test data only.";
 
-type DemoRow = StoredReport & { idempotencyKey: string | null };
+type DemoRow = StoredReport & {
+  idempotencyKey: string | null;
+  /** Status history (added in Milestone 4; absent in older demo files). */
+  events?: StatusEvent[];
+  updatedAt?: string;
+};
 type DemoFile = { notice: string; version: 1; reports: DemoRow[] };
 
 /**
@@ -21,13 +40,15 @@ type DemoFile = { notice: string; version: 1; reports: DemoRow[] };
  * Writes are serialised in-process and replace the file atomically. A corrupt or
  * unreadable file is reported as a storage failure and is never overwritten.
  */
-export class LocalDemoReportRepository implements ReportRepository {
+export class LocalDemoReportRepository
+  implements ReportRepository, ReviewRepository
+{
   readonly mode = "local-demo" as const;
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly filePath: string,
-    private readonly seed: StoredReport[] = syntheticSeedReports,
+    private readonly seed: SeedReport[] = syntheticSeedReports,
   ) {}
 
   create(record: NewReportRecord): Promise<CreateReportResult> {
@@ -71,6 +92,69 @@ export class LocalDemoReportRepository implements ReportRepository {
     return file.reports
       .map(({ idempotencyKey: _key, ...report }) => report)
       .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+  }
+
+  // -------------------------------------------------------------------------
+  // Reviewer access. Callers must authorise the reviewer first.
+  // -------------------------------------------------------------------------
+
+  async listReports(): Promise<ReviewReport[]> {
+    const file = await this.serialise(() => this.load());
+    return file.reports
+      .map(toReviewReport)
+      .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+  }
+
+  async getReport(reportId: string): Promise<ReviewReport | null> {
+    const file = await this.serialise(() => this.load());
+    const row = file.reports.find(
+      (candidate) => candidate.reportId === reportId,
+    );
+    return row ? toReviewReport(row) : null;
+  }
+
+  updateStatus(
+    change: StatusChange,
+    reviewer: ReviewerIdentity,
+  ): Promise<StatusUpdateResult> {
+    return this.serialise(async () => {
+      const file = await this.load();
+      const index = file.reports.findIndex(
+        (row) => row.reportId === change.reportId,
+      );
+      if (index === -1) return { ok: false, reason: "not_found" } as const;
+      const row = file.reports[index];
+      // Optimistic concurrency: refuse if someone else changed it first.
+      if (row.status !== change.expectedStatus) {
+        return { ok: false, reason: "conflict" } as const;
+      }
+      if (
+        !canTransition(row.status, change.nextStatus) ||
+        (noteRequired(row.status, change.nextStatus) && !change.note)
+      ) {
+        return { ok: false, reason: "invalid_transition" } as const;
+      }
+      const at = new Date().toISOString();
+      const updated: DemoRow = {
+        ...row,
+        status: change.nextStatus,
+        updatedAt: at,
+        events: [
+          ...(row.events ?? []),
+          {
+            at,
+            from: row.status,
+            to: change.nextStatus,
+            note: change.note,
+            reviewer: reviewer.label,
+          },
+        ],
+      };
+      const reports = [...file.reports];
+      reports[index] = updated;
+      await this.save({ ...file, reports });
+      return { ok: true, report: toReviewReport(updated) } as const;
+    });
   }
 
   private serialise<T>(task: () => Promise<T>): Promise<T> {
@@ -119,4 +203,26 @@ export class LocalDemoReportRepository implements ReportRepository {
       throw new StorageUnavailableError("Demo store could not be written");
     }
   }
+}
+
+/** Normalise a stored row for reviewers (older demo files lack newer fields). */
+function toReviewReport(row: DemoRow): ReviewReport {
+  const events = row.events ?? [];
+  return {
+    reportId: row.reportId,
+    submittedAt: row.submittedAt,
+    updatedAt: row.updatedAt ?? events.at(-1)?.at ?? row.submittedAt,
+    status: row.status,
+    isSynthetic: row.isSynthetic,
+    content: {
+      ...row.content,
+      reaction: {
+        ...row.content.reaction,
+        symptoms: row.content.reaction.symptoms ?? [],
+      },
+      aiAssisted: row.content.aiAssisted ?? false,
+    },
+    missingFields: row.missingFields,
+    events,
+  };
 }

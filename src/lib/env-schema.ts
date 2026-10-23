@@ -17,6 +17,10 @@ export const serverEnvSchema = z.object({
   ANTHROPIC_MODEL: optionalString,
   /** Directory for the local demonstration report store (no Supabase). */
   DEMO_DATA_DIR: optionalString,
+  /** Shared reviewer access code for the LOCAL DEMO store only (min 12 characters). */
+  REVIEWER_DEMO_ACCESS_CODE: optionalString,
+  /** Secret used to sign demo reviewer sessions (min 32 characters). */
+  REVIEWER_SESSION_SECRET: optionalString,
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;

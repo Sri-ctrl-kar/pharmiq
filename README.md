@@ -17,13 +17,20 @@ schema and milestone plan.
 | M1 Foundation — app shell, design system, safety copy | Done                                                        |
 | M2 Reporting form and data layer                      | Done                                                        |
 | M3 AI-assisted extraction (optional, user-confirmed)  | Done — see [`docs/AI_EXTRACTION.md`](docs/AI_EXTRACTION.md) |
-| M4 Reviewer workflow · M5 Analytics                   | Not started (placeholder pages)                             |
+| M4 Reviewer workflow and reviewer analytics           | Done — see [`docs/REVIEWER.md`](docs/REVIEWER.md)           |
+| M5 Public synthetic analytics (`/dashboard`)          | Not started (placeholder page)                              |
 
 **Working now, with no credentials:** the `/report` form (reporter, what happened,
 suspected medicines, reaction details incl. symptoms, other information, review),
 client- and server-side validation, missing-information checks, report IDs
 (`ADR-2026-XXXXXX`), duplicate-submission protection, saving to the **local
 demonstration store**, and 10 synthetic example descriptions.
+
+**Reviewer area (`/reviewer`):** locked until reviewer access is configured — a role
+selector is not authentication. With the local demo store, set
+`REVIEWER_DEMO_ACCESS_CODE` and `REVIEWER_SESSION_SECRET` for a shared-code demo sign-in;
+with Supabase storage, reviewers sign in with Supabase Auth. See
+[`docs/REVIEWER.md`](docs/REVIEWER.md).
 
 **Needs credentials:**
 
@@ -37,11 +44,11 @@ demonstration store**, and 10 synthetic example descriptions.
 
 The storage backend is chosen at request time (`GET /api/health` shows which):
 
-| Supabase variables set | Storage                                                               | Notes                                                                                                                                                                                                                                                                                     |
-| ---------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| None                   | **Local demo store** — `.data/demo-reports.json` (or `DEMO_DATA_DIR`) | Plain JSON file on the server: **not encrypted, no access control, no backups. Not a secure production database.** Seeded with 3 clearly labelled synthetic records. The UI tells users to enter test data only. Needs a writable filesystem, so it will not persist on serverless hosts. |
-| All three              | **Supabase Postgres**                                                 | Writes go through the `submit_report` database function using the service-role key on the server only. RLS blocks all direct reads and writes from `anon` and `authenticated` users; only reviewer/admin profiles can read reports.                                                       |
-| Some                   | **Submission disabled**                                               | Fails closed with an "unavailable" message rather than writing to the demo store.                                                                                                                                                                                                         |
+| Supabase variables set | Storage                                                               | Notes                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| None                   | **Local demo store** — `.data/demo-reports.json` (or `DEMO_DATA_DIR`) | Plain JSON file on the server: **not encrypted, no access control, no backups. Not a secure production database.** Seeded with 36 clearly labelled synthetic records when the file is first created (delete the file to re-seed). The UI tells users to enter test data only. Needs a writable filesystem, so it will not persist on serverless hosts. |
+| All three              | **Supabase Postgres**                                                 | Writes go through the `submit_report` database function using the service-role key on the server only. RLS blocks all direct reads and writes from `anon` and `authenticated` users; only reviewer/admin profiles can read reports.                                                                                                                    |
+| Some                   | **Submission disabled**                                               | Fails closed with an "unavailable" message rather than writing to the demo store.                                                                                                                                                                                                                                                                      |
 
 ### Enabling persistent Supabase storage
 
@@ -53,8 +60,10 @@ The storage backend is chosen at request time (`GET /api/health` shows which):
    `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
    The service-role key is server-only; never prefix it with `NEXT_PUBLIC_`.
 5. Restart and check `GET /api/health` returns `"storage": "supabase"`, then submit a test report.
-6. Reviewer access (Milestone 4): add a row to `public.profiles` with `role = 'reviewer'`
-   for a Supabase Auth user.
+6. Reviewer access: create a Supabase Auth user (Authentication → Users), then set
+   `role = 'reviewer'` on its row in `public.profiles` (insert the row if it does not
+   exist). Only reviewer/admin profiles can read reports or change their status; see
+   [`docs/REVIEWER.md`](docs/REVIEWER.md).
 
 Before handling real reports you would also need a hosting/data-protection review (e.g.
 India's DPDP Act obligations), rate limiting on the public form, backups and monitoring.
@@ -78,7 +87,8 @@ npm run dev                  # http://localhost:3000
 | `npm test`                    | Vitest unit tests         |
 | `npm run format`              | Prettier                  |
 
-Useful routes: `/report` (reporting form), `/design-system` (living style guide),
+Useful routes: `/report` (reporting form), `/reviewer` (reviewer overview and queue;
+needs reviewer access), `/design-system` (living style guide),
 `/api/health` (storage mode and which integrations are configured — never values),
 `/api/extract` (AI suggestions; server-side only).
 

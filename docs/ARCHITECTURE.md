@@ -24,7 +24,7 @@ Browser (Next.js App Router, React 19, Tailwind v4)
 Next.js server (Node runtime)
    ├─ Server Actions ── submit report, confirm extraction, reviewer status changes
    ├─ Route Handlers ── /api/extract (AI), /api/health
-   ├─ proxy.ts ─────── refreshes Supabase auth cookie, optimistic redirect for /reviewer
+   ├─ proxy.ts ─────── refreshes the Supabase auth cookie on /reviewer (not authorisation)
    ├─ Data Access Layer (src/server/*) ── every DB read/write; re-checks auth & role
    └─ AI service (src/server/ai/*) ── Claude API via @anthropic-ai/sdk, optional
           │                               falls back to "manual entry" when key absent
@@ -81,14 +81,14 @@ Added in later milestones (not yet installed):
 .
 ├── docs/ARCHITECTURE.md
 ├── supabase/
-│   ├── migrations/               ← SQL migrations (reports, RLS, submit_report)
+│   ├── migrations/               ← SQL migrations (reports, RLS, submit_report, review_report)
 │   └── seed.sql                  ← SYNTHETIC demo records
 ├── src/
 │   ├── app/
 │   │   ├── report/               ← guided reporting flow + server action (M2)
 │   │   │   └── _components/      ← steps, review, confirmation
 │   │   ├── dashboard/            ← synthetic analytics (M5)
-│   │   ├── reviewer/             ← protected reviewer workflow (M4)
+│   │   ├── reviewer/             ← reviewer overview, queue, report detail, sign-in, actions (M4)
 │   │   ├── design-system/        ← living style guide
 │   │   ├── api/health/route.ts   ← config + storage mode (no values)
 │   │   └── api/extract/route.ts  ← AI suggestions (M3)
@@ -96,10 +96,13 @@ Added in later milestones (not yet installed):
 │   ├── lib/
 │   │   ├── reports/              ← shared: constants, Zod schema, missing info, report ID, privacy
 │   │   ├── ai/                   ← extraction contract, apply rules, synthetic examples
+│   │   ├── review/               ← status transitions, queue filters/sort, analytics, timeline
 │   │   ├── env-schema.ts, site.ts, utils.ts
 │   └── server/                   ← server-only
 │       ├── env.ts
 │       ├── reports/              ← repository contract, local demo + Supabase adapters, submit service
+│       ├── auth/                 ← reviewer auth mode, demo session cookie, access resolution
+│       ├── review/               ← review repository contract, Supabase adapter, action handlers
 │       └── ai/                   ← prompt, Claude provider, verifier, rate limit, service
 ├── evals/extraction/             ← live eval runner + scorer (needs API key)
 └── tests/                        ← vitest unit + Postgres (PGlite) tests
@@ -155,13 +158,30 @@ collected yet — the form asks for no names, phone numbers or addresses. `repor
 output) was dropped by design: only the reporter-confirmed values and an `ai_assisted`
 flag are stored. M3 added `reaction_symptoms text[]` and `ai_assisted`.
 
+M4 added (`supabase/migrations/20261025000000_reviewer_workflow.sql`):
+
+- `report_status_events` — append-only status history: `report_id`, `reviewer_id`
+  (`auth.users`, set null on delete), `from_status`, `to_status`, `note` (≤ 1000 chars),
+  `created_at`. Readable only by reviewers/admins via RLS; no direct writes for any client
+  role.
+- `review_report(public_id, expected, next, note)` — `security definer`, executable only by
+  `authenticated`. Checks `is_reviewer()`, the allowed transition (`submitted ⇄
+under_review ⇄ reviewed`; reopening a reviewed report needs a note), locks the row and
+  rejects a stale `expected` status (optimistic concurrency), then updates the status and
+  writes the event with `auth.uid()` in one transaction. Reviewer reads use the signed-in
+  user's client (anon key + JWT) so RLS applies; the service-role key is never used for
+  reviewer reads.
+
+There is still no `report_reviews` (causality opinion) or general `audit_log` table — see
+`docs/REVIEWER.md`.
+
 ## 6. Milestones
 
-| #      | Milestone                     | Status / exit criteria                                                                                                                                                                                                                                       |
-| ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **M1** | Foundation                    | Done. App shell, design system, safety copy, env validation, health endpoint.                                                                                                                                                                                |
-| **M2** | Reporting form and data layer | Done. Multi-step form with review, shared Zod validation, missing-information checks, report IDs, idempotent submission, local demo store, Supabase migration + RLS + RPC tested against Postgres.                                                           |
-| **M3** | AI-assisted extraction        | Done. `/api/extract` with Claude structured output, evidence quotes, deterministic verifier, data minimisation, rate limits, accept/edit/reject each suggestion, manual fallback. AI output is not stored (only `ai_assisted`). See `docs/AI_EXTRACTION.md`. |
-| M4     | Reviewer workflow             | Supabase Auth login, `proxy.ts` session refresh, role-gated `/reviewer` queue, report detail, status transitions, causality opinion & notes, audit log.                                                                                                      |
-| M5     | Synthetic analytics           | Aggregate RPCs over `is_synthetic` rows only, dashboard with persistent "Synthetic data" labelling.                                                                                                                                                          |
-| M6     | Hardening & demo polish       | Rate limiting, accessibility pass, Playwright E2E in CI, privacy review, deployment.                                                                                                                                                                         |
+| #      | Milestone                     | Status / exit criteria                                                                                                                                                                                                                                                                                                                                                         |
+| ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **M1** | Foundation                    | Done. App shell, design system, safety copy, env validation, health endpoint.                                                                                                                                                                                                                                                                                                  |
+| **M2** | Reporting form and data layer | Done. Multi-step form with review, shared Zod validation, missing-information checks, report IDs, idempotent submission, local demo store, Supabase migration + RLS + RPC tested against Postgres.                                                                                                                                                                             |
+| **M3** | AI-assisted extraction        | Done. `/api/extract` with Claude structured output, evidence quotes, deterministic verifier, data minimisation, rate limits, accept/edit/reject each suggestion, manual fallback. AI output is not stored (only `ai_assisted`). See `docs/AI_EXTRACTION.md`.                                                                                                                   |
+| **M4** | Reviewer workflow             | Done. Server-side reviewer authorisation (Supabase Auth + `profiles.role`, or a signed shared-code demo session with local demo storage only), review workload counts plus synthetic-only analytics, filterable queue, report detail with timeline, status transitions with notes and history. Causality opinion and a general audit log are deferred. See `docs/REVIEWER.md`. |
+| M5     | Synthetic analytics           | Aggregate RPCs over `is_synthetic` rows only, dashboard with persistent "Synthetic data" labelling.                                                                                                                                                                                                                                                                            |
+| M6     | Hardening & demo polish       | Rate limiting, accessibility pass, Playwright E2E in CI, privacy review, deployment.                                                                                                                                                                                                                                                                                           |

@@ -30,6 +30,8 @@ export const safetyCopy = {
     "This report is recorded in ADR Connect India only. It has not been sent to the Pharmacovigilance Programme of India (PvPI), CDSCO or any other regulator.",
   localDemoStorage:
     "Demonstration storage: reports are saved to a local file on this server, which is not a secure production database. Use made-up or test details only — do not enter real patient information.",
+  suspectedNotCausal:
+    "Reports record associations suspected by the reporter. They do not show that a medicine caused a reaction, and counts are not incidence rates or safety signals.",
   syntheticData:
     "All analytics in this demonstration use synthetic data generated for testing. They do not describe real patients or real medicine safety signals.",
 } as const;
